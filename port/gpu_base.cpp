@@ -6,10 +6,35 @@
 
 #include <algorithm>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <string>
 
 namespace spelunk {
+
+namespace {
+    // A small integrated GPU, by the name the driver gives it: Intel's integrated graphics (UHD, HD, Iris and Iris Xe on
+    // Windows; on Linux Mesa names most by their chip, "Intel(R) Graphics (ADL-N)", "Intel(R) Xe Graphics (TGL GT2)"),
+    // not its Arc cards; and the lower Mali and Adreno parts (phones' and handhelds'). On these the CV1000's drawing can
+    // be slower than the processor's
+    bool SmallGpu(const std::string &name) {
+        if (name.find("Intel") != std::string::npos && name.find("Arc") == std::string::npos) {
+            return true;
+        }
+        // (Mali: the T series and the G31 to G68; Adreno: the 200s to 500s, and the 600s below 640)
+        if (const size_t at = name.find("Mali-"); at != std::string::npos) {
+            const char kind = at + 5 < name.size() ? name[at + 5] : 0;
+            const int number = atoi(name.c_str() + at + 6);
+            return kind == 'T' || (kind == 'G' && number > 0 && number <= 68);
+        }
+        if (const size_t at = name.find("Adreno"); at != std::string::npos) {
+            const size_t digits = name.find_first_of("0123456789", at);
+            const int number = digits == std::string::npos ? 0 : atoi(name.c_str() + digits);
+            return number >= 200 && number < 640;
+        }
+        return false;
+    }
+} // namespace
 
 SDL_GPUTexture *GpuBase::MakeTexture(SDL_GPUTextureFormat format, int w, int h, SDL_GPUTextureUsageFlags usage) {
     SDL_GPUTextureCreateInfo info{};
@@ -115,6 +140,10 @@ bool GpuBase::Open(SDL_Window *window) {
         }
 #endif
         printf("%s\n", line.c_str());
+        if (SmallGpu(line)) {
+            printf("gpu: this looks like small integrated graphics: if the game runs slowly, try the Display page's "
+                   "Renderer: Software (the picture is the same)\n");
+        }
         fflush(stdout);
     }
     // (with no window, the format windows' pictures most often have: a window given later that has another makes the

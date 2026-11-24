@@ -5,6 +5,11 @@ Versions follow [Semantic Versioning](https://semver.org/).
 
 ## Unreleased
 
+- **A Renderer setting** on the Display page, in the launcher and the in-game menu (#18): GPU, as before, or Software,
+  the processor drawing the same picture, for small integrated graphics where the GPU's drawing is the slow part. Used
+  from the next start. The game's log suggests it when the GPU is Intel's integrated graphics or a low-end Mali or
+  Adreno.
+
 ## 0.2.0-beta.1
 
 Mushihimesama Matsuri Ver 1.5 joins the collection (26 games, 31 versions), and your own shaders get one folder for every
