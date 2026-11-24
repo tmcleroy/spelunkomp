@@ -14,6 +14,9 @@ Versions follow [Semantic Versioning](https://semver.org/).
   the processor drawing the same picture, for small integrated graphics where the GPU's drawing is the slow part. Used
   from the next start. The game's log suggests it when the GPU is Intel's integrated graphics or a low-end Mali or
   Adreno.
+- **The host's own time a frame** (#18): the game's log (logs/game.log) says once a minute how long this machine took
+  to make each frame (median, p95, the most, against the board's 16.7 ms), and the Speed readout has a new choice, **On,
+  with the host's time**, that shows it beside the game's own speed: the board's slowdown told from the machine's.
 
 ## 0.2.0-beta.1
 
