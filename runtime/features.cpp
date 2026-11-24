@@ -119,6 +119,14 @@ namespace {
              "PGM games taller and narrower than the cabinet did. With Whole pixels, the picture's long side is a whole "
              "multiple of the board's pixels and the short side is made to the 4:3 shape.",
              0, {"As the cabinet (4:3)", "Square pixels"}},
+            // (renderer: read once as the game starts, port/main.cpp; --software is Software whatever this says)
+            {"renderer", "Display", "Renderer",
+             "How the board's picture is drawn. GPU: by the graphics chip. Software: by the processor, as the board's own "
+             "drawing is worked out (the reference the GPU's picture is checked against, pixel for pixel). The picture and "
+             "the game are the same either way. Software is for a computer with small integrated graphics (Intel UHD or Iris, "
+             "a low-end phone's GPU), where the GPU's drawing can be slower than the processor's. Changed in the game's menu, "
+             "it is used when the game starts again.",
+             0, {"GPU", "Software"}},
             {"boot", "Game", "Start",
              "Straight to the title: when the game starts, and when it is reset, the board's checks, the warning and the logos "
              "are run unseen and unheard, as fast as the machine goes, and the picture comes with the title. Nothing of the "

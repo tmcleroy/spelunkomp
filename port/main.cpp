@@ -473,6 +473,18 @@ int main(int argc, char **argv) {
         }
         from = comma + 1;
     }
+    // The Renderer setting (Display page): the software model's picture in place of the GPU's. Read here once: the
+    // window and the picture's whole path are made for one or the other, so a change in the menu waits for the next
+    // start (said when it is made). --software chooses Software whatever the setting says
+    const size_t rendererAt = FeatureIndex("renderer");
+    const int rendererAtStart = rendererAt < features.size() ? features[rendererAt] : 0;
+    if (rendererAtStart == 1 && !softwareOnly) {
+        softwareOnly = true;
+        printf("renderer: software (the Renderer setting)\n");
+    } else if (softwareOnly) {
+        printf("renderer: software (--software)\n");
+    }
+    fflush(stdout);
 
     // The Arcade monitor page's choices as the features have them now (none on a phone: all off)
     auto arcadeChoices = [&]() {
@@ -1005,6 +1017,7 @@ int main(int argc, char **argv) {
         note = words;
         noteFrames = 90;
     };
+    int rendererNoted = rendererAtStart; // (the Renderer setting as last seen: a change in the menu is said once)
     const bool toolTimes = getenv("SPELUNK_TOOL_TIMES") != nullptr;
     auto timed = [&](const char *what, auto &&fn) {
         const auto t0 = std::chrono::steady_clock::now();
@@ -2028,6 +2041,12 @@ int main(int argc, char **argv) {
         arcade.Follow(window, arcadeChoices());
         if (!running) {
             break;
+        }
+        if (rendererAt < features.size() && features[rendererAt] != rendererNoted) {
+            rendererNoted = features[rendererAt];
+            if (rendererNoted != rendererAtStart) {
+                say("RENDERER: WHEN THE GAME STARTS AGAIN"); // (the menu's change, used at the next start)
+            }
         }
         if (beginNowAt && frameCount == beginNowAt) {
             beginNowAt = 0;

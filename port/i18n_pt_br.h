@@ -33,6 +33,8 @@ inline constexpr recomp::i18n::Entry kPortuguese[] = {
     {"No shader: {}", "Sem shader: {}"},
     {"The shader {} didn't load: {}", "O shader {} não carregou: {}"},
     {"The shader {} didn't load: {}. The one before is kept.", "O shader {} não carregou: {}. O anterior continua."},
+    {"Renderer", "Renderizador"},
+    {"How the board's picture is drawn. GPU: by the graphics chip. Software: by the processor, as the board's own drawing is worked out (the reference the GPU's picture is checked against, pixel for pixel). The picture and the game are the same either way. Software is for a computer with small integrated graphics (Intel UHD or Iris, a low-end phone's GPU), where the GPU's drawing can be slower than the processor's. Changed in the game's menu, it is used when the game starts again.", "Como a imagem da placa é desenhada. GPU: pelo chip gráfico. Software: pelo processador, do jeito que o próprio desenho da placa é calculado (a referência com que a imagem da GPU é comparada, pixel a pixel). A imagem e o jogo são os mesmos dos dois jeitos. Software é para um computador com gráficos integrados pequenos (Intel UHD ou Iris, a GPU de um celular de entrada), onde o desenho da GPU pode ser mais lento que o do processador. Se for trocado no menu do jogo, vale quando o jogo começar de novo."},
 };
 
 } // namespace port

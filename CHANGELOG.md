@@ -10,6 +10,10 @@ Versions follow [Semantic Versioning](https://semver.org/).
   20 frames of drawing queued before it (a quarter of a second on an Apple M4, far longer on small graphics), and
   the game's memory reached 1.3 GB there (mmpork). The unseen frames are now held to a few frames in flight: no
   stall, 0.7 GB, and the trip as fast as before.
+- **A Renderer setting** on the Display page, in the launcher and the in-game menu (#18): GPU, as before, or Software,
+  the processor drawing the same picture, for small integrated graphics where the GPU's drawing is the slow part. Used
+  from the next start. The game's log suggests it when the GPU is Intel's integrated graphics or a low-end Mali or
+  Adreno.
 
 ## 0.2.0-beta.1
 
