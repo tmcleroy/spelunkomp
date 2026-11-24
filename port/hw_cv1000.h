@@ -81,6 +81,9 @@ struct Hw {
     void SetTiming(bool on) {
         if (on && !board->cpu.timing) {
             board->cpu.timingPaths.Forget(); // (the code may have been written while it was off)
+#ifdef SPELUNK_SHADOW_TIMING
+            board->cpu.refPaths.Forget();
+#endif
         }
         board->cpu.timing = on;
     }

@@ -8,6 +8,12 @@
 #include <cstdio>
 #include <cstdlib>
 
+#ifdef SPELUNK_SHADOW_TIMING
+#define SHADOW_TIMING_ALSO(x) x
+#else
+#define SHADOW_TIMING_ALSO(x)
+#endif
+
 namespace spelunk {
 
 OpFn SH3::s_ops[0x10000];
@@ -133,6 +139,7 @@ namespace ops {
 SH3::SH3() {
     (void)g_built;
     Sh3Timing::opCycles = s_cycles;
+    SHADOW_TIMING_ALSO(ref::Sh3Timing::opCycles = s_cycles);
     if (const char *w = getenv("SPELUNK_WATCH")) {
         sscanf(w, "%x-%x", &watchLo, &watchHi);
         watching = watchHi != 0;
@@ -252,6 +259,10 @@ void SH3::TakeInterrupt() {
     cycles += 5;
     if (timing) {
         memoryTiming.Redirect(PC, cycles);
+#ifdef SPELUNK_SHADOW_TIMING
+        refTiming.Redirect(PC, cycles);
+        ShadowCheckWhole("interrupt");
+#endif
     }
 }
 
@@ -409,6 +420,10 @@ void SH3::WriteSlow(uint32 a, uint32 v, unsigned size) {
         } else if ((a & 0xFF000000u) == 0xF0000000u) {
             // (the cache's address array: a dirty line is written back)
             const uint32 cost = memoryTiming.ArrayWrite(a & 0x00FFFFFFu, v, cycles);
+#ifdef SPELUNK_SHADOW_TIMING
+            ShadowEvent('A', at, a, 4, cost, refTiming.ArrayWrite(a & 0x00FFFFFFu, v, cycles));
+            ShadowCheckWhole("cache array write");
+#endif
             if (timing) {
                 cycles += cost;
             }
@@ -494,15 +509,22 @@ void SH3::WriteRegister(uint32 a, uint32 v, unsigned size) {
                 cycles += Sh3Timing::kFlushCost;
             }
             memoryTiming.Flush();
+#ifdef SPELUNK_SHADOW_TIMING
+            refTiming.Flush();
+#endif
         }
         CCR = v & ~8u;
         memoryTiming.ccr = CCR;
+#ifdef SPELUNK_SHADOW_TIMING
+        refTiming.ccr = CCR;
+        ShadowCheckWhole("CCR");
+#endif
         return;
     // The bus state controller: what the bus timing goes by
-    case 0xFFFFFF62: memoryTiming.bcr2 = static_cast<uint16>(v); return;
-    case 0xFFFFFF64: memoryTiming.wcr1 = static_cast<uint16>(v); return;
-    case 0xFFFFFF66: memoryTiming.wcr2 = static_cast<uint16>(v); return;
-    case 0xFFFFFF68: memoryTiming.mcr = static_cast<uint16>(v); return;
+    case 0xFFFFFF62: memoryTiming.bcr2 = static_cast<uint16>(v); SHADOW_TIMING_ALSO(refTiming.bcr2 = static_cast<uint16>(v)); return;
+    case 0xFFFFFF64: memoryTiming.wcr1 = static_cast<uint16>(v); SHADOW_TIMING_ALSO(refTiming.wcr1 = static_cast<uint16>(v)); return;
+    case 0xFFFFFF66: memoryTiming.wcr2 = static_cast<uint16>(v); SHADOW_TIMING_ALSO(refTiming.wcr2 = static_cast<uint16>(v)); return;
+    case 0xFFFFFF68: memoryTiming.mcr = static_cast<uint16>(v); SHADOW_TIMING_ALSO(refTiming.mcr = static_cast<uint16>(v)); return;
     case 0xFFFFFFF0: PTEH = v; return;
     case 0xFFFFFFF4: PTEL = v; return;
     case 0xFFFFFFF8: TTB = v; return;
@@ -584,11 +606,17 @@ void SH3::RunDma(unsigned channel) {
     timing = false; // (the transfers are not the CPU's own accesses)
     if (!timed) {
         timingPaths.Forget(); // (what they write may be code: with the model on, each write is noted below)
+        SHADOW_TIMING_ALSO(refPaths.Forget());
         cycles += static_cast<uint64>(count) * 10;
     }
     for (; count; count--) {
         if (timed) {
             cycles += memoryTiming.DmaTransfer(SAR[channel], DAR[channel], size);
+#ifdef SPELUNK_SHADOW_TIMING
+            if (memoryTiming.DmaTransfer(SAR[channel], DAR[channel], size) != refTiming.DmaTransfer(SAR[channel], DAR[channel], size)) {
+                ShadowFail("DMA transfer");
+            }
+#endif
         }
         switch (size) {
         case 1: Write8(DAR[channel], Read8(SAR[channel])); break;
@@ -597,6 +625,7 @@ void SH3::RunDma(unsigned channel) {
         }
         if (timed) {
             timingPaths.Written(DAR[channel], size); // (a path kept over it is found again)
+            SHADOW_TIMING_ALSO(refPaths.Written(DAR[channel], size));
         }
         SAR[channel] += sourceStep;
         DAR[channel] += destStep;
@@ -642,6 +671,7 @@ void SH3::Serialize(Archive &ar) {
     ar.Pod(memoryTiming);
     if (!ar.Saving()) {
         timingPaths.Forget(); // (found over the code that was in RAM)
+        SHADOW_TIMING_ALSO(ShadowSync());
     }
     ar.Pod(MMUCR);
     ar.Pod(PTEH);
@@ -681,5 +711,21 @@ void SH3::Describe(FILE *out) const {
         fprintf(out, "sh3.TMU%d.TCOR %08X\nsh3.TMU%d.TCR %04X\n", i, tmu[i].TCOR, i, tmu[i].TCR);
     }
 }
+
+#ifdef SPELUNK_SHADOW_TIMING
+void SH3::ShadowFail(const char *where) {
+    fprintf(stderr, "shadow: MISMATCH at %s: cycle %llu, pc %08X, event %llu\n", where, static_cast<unsigned long long>(cycles), PC,
+            static_cast<unsigned long long>(shadowEvents));
+    const uint64 first = shadowEvents > 64 ? shadowEvents - 64 : 0;
+    for (uint64 i = first; i < shadowEvents; i++) {
+        const ShadowRecord &r = shadowLog[i & 63];
+        fprintf(stderr, "shadow:   #%llu %c insn %08X addr %08X bytes %u at cycle %llu: %u, reference %u\n",
+                static_cast<unsigned long long>(i), r.kind, r.insn, r.address, r.bytes, static_cast<unsigned long long>(r.cycles), r.got, r.want);
+    }
+    fprintf(stderr, "shadow: the fields that differ (in use, reference):\n%s", TimingDiff(memoryTiming, refTiming).c_str());
+    fflush(stderr);
+    std::_Exit(3);
+}
+#endif
 
 } // namespace spelunk

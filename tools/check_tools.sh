@@ -9,23 +9,24 @@
 #   rewind    rewind held for 60 frames, played on: the same as a run that simply played to the frame it ends on
 #   both      with run-ahead on, the point set, rewind held, back to the point, played on
 # With the GPU and (SOFT=1 too) the software blitter.
-#   tools/check_tools.sh ROMS [GAME...]
+#   tools/check_tools.sh ROMS [GAME...]   (BUILDS=build: the folder of each game's build, BUILDS/<id>/<id>)
 set -e
 cd "$(dirname "$0")/.."
 ROMS=${1:?usage: tools/check_tools.sh ROMS [GAME...]}
 shift
 GAMES=${*:-$(for cfg in games/*/game.cfg; do basename "$(dirname "$cfg")"; done)}
 SET=${SET:-5000}
+BUILDS=${BUILDS:-./build} # (where each game's program is: BUILDS/<id>/<id>; tools/shadow/ gives its shadow builds)
 # Into play with free play, then fire held for good (the controls must not depend on when the tools were used)
 PLAY="--system 4100:5:0x10 --press 4300:5:0x10 --press 4400:5:0x10 --press 4500:5:0x10 --press 4600:5:0x10 --press 4700:5:0x10 --press 4800:5:0x10 --press 4900:99999:0x11"
 fail=0
 for g in $GAMES; do
-    [ -x build/$g/$g ] || { echo "$g: not built"; continue; }
+    [ -x $BUILDS/$g/$g ] || { echo "$g: not built"; continue; }
     out=work/$g/tools
     mkdir -p $out
     run() { # name frames [more...]
         name=$1; frames=$2; shift 2
-        SPELUNK_HIDDEN_WINDOW=1 SPELUNK_REPORT_STATE=1 ./build/$g/$g --roms "$ROMS" --mute $MODE --frames $frames --shot $frames:$out/$name.png $PLAY "$@" \
+        SPELUNK_HIDDEN_WINDOW=1 SPELUNK_REPORT_STATE=1 $BUILDS/$g/$g --roms "$ROMS" --mute $MODE --frames $frames --shot $frames:$out/$name.png $PLAY "$@" \
             2>&1 | grep '^state:' > $out/$name.txt || true
     }
     same() { # what a b

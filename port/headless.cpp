@@ -21,6 +21,10 @@
 //   --record FILE [--record-static N]  the blocks of code run (and N steps of those they lead to), for tools/translate.py
 //   --wav FILE                         the sound, as the chip makes it
 //   --save-state FRAME:file   --load-state file
+//   --save-on-arrival FILE             (with --features: a game run unseen to where a mode begins, to_boss and the
+//                                      rest) the state saved after the first frame shown once the game is there, its
+//                                      frame said ("arrival: frame N"), and the run ended (tools/shadow/: the boss
+//                                      states, made from the ROM set alone)
 //   --features NAME[=N],...            the game's features (games/<id>/src: free play, the training features) as the
 //                                      game program's --features has them; off unless named. Without it the board
 //                                      alone runs, as the checks run it; `--features list`: each one's name and
@@ -81,7 +85,8 @@ std::vector<uint32_t> Turned(const uint32_t *in, int w, int h, int degrees, int 
 } // namespace
 
 int main(int argc, char **argv) {
-    std::string configPath, romFolder = "rom", cpuMode = "native", hashLog, recordPath, loadState, wavPath;
+    std::string configPath, romFolder = "rom", cpuMode = "native", hashLog, recordPath, loadState, wavPath, arrivalState;
+    bool wasUnseen = false;
     std::vector<int16_t> wav;
     uint32_t wavRate = 0;
     uint64_t frames = 600;
@@ -186,6 +191,8 @@ int main(int argc, char **argv) {
             frameAnd(saveStates);
         } else if (a == "--load-state") {
             loadState = next();
+        } else if (a == "--save-on-arrival") {
+            arrivalState = next();
         } else if (a == "--hash-log") {
             hashLog = next();
         } else if (a == "--wav") {
@@ -384,10 +391,23 @@ int main(int argc, char **argv) {
         }
         if (withGame) {
             // (a game run unseen to where a mode begins: the controls are the game's, as in the game program)
-            if (const int bits = ThisGame().unseen ? ThisGame().unseen(*board, features) : -1; bits >= 0) {
+            const int bits = ThisGame().unseen ? ThisGame().unseen(*board, features) : -1;
+            if (bits >= 0) {
                 board->inputs[0] = static_cast<uint32_t>(bits);
                 board->inputs[1] = board->system = 0;
+            } else if (wasUnseen && !arrivalState.empty()) {
+                // (there: the state as the frame begins, and the run ends)
+                std::vector<uint8_t> data;
+                Archive ar(data, true);
+                board->Serialize(ar);
+                if (FILE *out = fopen(arrivalState.c_str(), "wb")) {
+                    fwrite(data.data(), 1, data.size(), out);
+                    fclose(out);
+                }
+                fprintf(stderr, "arrival: frame %llu\n", static_cast<unsigned long long>(board->frame));
+                break;
             }
+            wasUnseen = bits >= 0;
             if (ThisGame().beforeFrame) {
                 ThisGame().beforeFrame(*board, features);
             }
@@ -468,6 +488,10 @@ int main(int argc, char **argv) {
     if (!recordPath.empty()) {
         board->cpu.SaveRecording(recordPath.c_str());
     }
+#ifdef SPELUNK_SHADOW_TIMING
+    fprintf(stderr, "shadow: %llu events compared with the reference model, all the same\n",
+            static_cast<unsigned long long>(board->cpu.shadowEvents));
+#endif
     if (const char *path = getenv("SPELUNK_INTERPRETED")) {
         board->cpu.SaveInterpreted(path);
     }

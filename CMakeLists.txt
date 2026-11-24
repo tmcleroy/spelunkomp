@@ -54,6 +54,10 @@ add_library(spelunk_machine STATIC
 )
 set_source_files_properties(third_party/ymfm_opn.cpp third_party/ymfm_ssg.cpp third_party/ymfm_adpcm.cpp third_party/ymfm_opm.cpp
                             PROPERTIES COMPILE_OPTIONS "-w")
+option(SHADOW_TIMING "the CV1000's timing model run beside its reference (machine/bus_timing_ref.h) at every event, and compared: tools/shadow/" OFF)
+if(SHADOW_TIMING)
+  add_compile_definitions(SPELUNK_SHADOW_TIMING)
+endif()
 option(CHECK68K "translated 68000 code run a block at a time against the interpreter (--cpu check)" OFF)
 if(CHECK68K)
   add_compile_definitions(SPELUNK_CHECK68K)

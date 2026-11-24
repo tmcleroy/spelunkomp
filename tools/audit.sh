@@ -49,6 +49,9 @@ check "no key-like tables (256 byte values or more in a list) outside third_part
     FNR == 1 { all = ""; last = FILENAME }
     { all = all "\n" $0 }
     END { if (NR) look(all, last) }' || true)"
+# (the shadow build's reference model, tools/shadow/: kept exactly as the model was before its hot path changed)
+check "the timing model's reference is unchanged (machine/bus_timing_ref.h)" "$(sum=$( (sha256sum machine/bus_timing_ref.h 2>/dev/null || shasum -a 256 machine/bus_timing_ref.h) | cut -c1-64); \
+    [ "SHA256=$sum" = "SHA256=e9f69a458c67f7b5c5da915f2d4fe9bee3bbf7adf980303828936b11c4c2b108" ] || echo "machine/bus_timing_ref.h: $sum")"
 check "no home folder or machine paths" "$(grep_files -e '/Users/[a-zA-Z]' -e '/home/[a-z]+/' -e 'C:\\\\Users\\\\[a-zA-Z]' -e '~/code/' -e '~/\.claude' -e '/Volumes/' -e '/private/tmp/claude' -e '/tmp/claude-' || true)"
 check "no private session links or private network addresses" "$(grep_files -e 'claude\.ai/code/session' -e '\b192\.168\.[0-9]+\.[0-9]+' -e '\b10\.[0-9]+\.[0-9]+\.[0-9]+\b' -e '\.local\b[^/_]' || true)"
 # (third_party/'s files are kept as their projects publish them: up to 1 MB; the README's pictures up to 6 MB, its

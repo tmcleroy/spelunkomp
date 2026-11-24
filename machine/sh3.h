@@ -12,6 +12,9 @@
 #pragma once
 
 #include "bus_timing.h"
+#ifdef SPELUNK_SHADOW_TIMING
+#include "bus_timing_shadow.h"
+#endif
 
 #include <array>
 #include <bit>
@@ -147,14 +150,62 @@ public:
         return __builtin_bswap16(op);
     }
     void TimeAccess(uint32 a, uint32 bytes, bool write) {
+#ifdef SPELUNK_SHADOW_TIMING
+        const uint32 want = refTiming.Access(refPaths, at, a, bytes, write, inSlot, cycles, [this](uint32 p) -> uint16 { return TimingCode(p); });
+        const uint32 got = memoryTiming.Access(timingPaths, at, a, bytes, write, inSlot, cycles,
+                                               [this](uint32 p) -> uint16 { return TimingCode(p); });
+        ShadowEvent(write ? 'W' : 'R', at, a, bytes, got, want);
+        cycles += got;
+#else
         cycles += memoryTiming.Access(timingPaths, at, a, bytes, write, inSlot, cycles,
                                       [this](uint32 p) -> uint16 { return TimingCode(p); });
+#endif
     }
     // A taken branch (or any instruction that set the PC) at `branch`, its delay slot run and counted: PC is where it
     // went. Translated code calls it at the same point
     void TimeBranch(uint32 branch, uint32 target) {
+#ifdef SPELUNK_SHADOW_TIMING
+        const uint32 want = refTiming.Taken(refPaths, branch, target, cycles, [this](uint32 p) -> uint16 { return TimingCode(p); });
+        const uint32 got = memoryTiming.Taken(timingPaths, branch, target, cycles, [this](uint32 p) -> uint16 { return TimingCode(p); });
+        ShadowEvent('B', branch, target, 0, got, want);
+        cycles += got;
+#else
         cycles += memoryTiming.Taken(timingPaths, branch, target, cycles, [this](uint32 p) -> uint16 { return TimingCode(p); });
+#endif
     }
+#ifdef SPELUNK_SHADOW_TIMING
+    // The shadow build (tools/shadow/): the reference model (machine/bus_timing_ref.h) run beside the one in use, at
+    // every event, and the two compared; the first difference stops the run with both states (ShadowFail)
+    ref::Sh3Timing refTiming;
+    ref::Sh3Paths refPaths;
+    uint64 shadowEvents = 0;
+    struct ShadowRecord {
+        char kind;
+        uint32 insn, address, bytes, got, want;
+        uint64 cycles;
+    };
+    ShadowRecord shadowLog[64] = {};
+    void ShadowEvent(char kind, uint32 insn, uint32 address, uint32 bytes, uint32 got, uint32 want) {
+        shadowLog[shadowEvents & 63] = {kind, insn, address, bytes, got, want, cycles};
+        shadowEvents++;
+        if (got != want || !TimingScalarsEqual(memoryTiming, refTiming) ||
+            ((shadowEvents & 255) == 0 && !TimingCacheEqual(memoryTiming, refTiming))) [[unlikely]] {
+            ShadowFail("event");
+        }
+    }
+    // Both whole, at a frame's end (the board's), and wherever the model was changed outside an event
+    void ShadowCheckWhole(const char *where) {
+        if (!TimingScalarsEqual(memoryTiming, refTiming) || !TimingCacheEqual(memoryTiming, refTiming)) {
+            ShadowFail(where);
+        }
+    }
+    [[noreturn]] void ShadowFail(const char *where);
+    // (a state loaded: the reference given the same state, and its own paths forgotten as the model's are)
+    void ShadowSync() {
+        TimingCopy(memoryTiming, refTiming);
+        refPaths.Forget();
+    }
+#endif
     uint8 Read8(uint32 a) {
         if (timing) [[unlikely]] {
             TimeAccess(a, 1, false);

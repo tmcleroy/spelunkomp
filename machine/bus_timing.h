@@ -35,7 +35,11 @@
 #include <cstring>
 #include <vector>
 
+#ifdef SPELUNK_TIMING_PROFILE
+#define SPELUNK_TIMING_HOT __attribute__((noinline)) inline // (profiling: each step its own symbol)
+#else
 #define SPELUNK_TIMING_HOT __attribute__((always_inline)) inline
+#endif
 #define SPELUNK_TIMING_COLD __attribute__((noinline))
 
 namespace spelunk {
@@ -744,7 +748,9 @@ struct Sh3Paths {
     static uint32_t Block(uint32_t a) {
         return (a & (kRamBytes - 1)) >> kBlockShift;
     }
-    struct Memo {
+    // (laid out for the lookup: what Find and a short path's Run read first, the key, the blocks and the first fetches,
+    // in the first 64 bytes; each memo on a line of its own)
+    struct alignas(64) Memo {
         uint32_t from, to, stamp;
         uint32_t generation; // (kept while it is the table's: Forget starts a new one)
         uint8_t blocks;
@@ -779,7 +785,7 @@ struct Sh3Paths {
     };
     std::vector<Memo> memos = std::vector<Memo>(kMemos);
     std::vector<uint8_t> recent = std::vector<uint8_t>(kMemos / 2); // (each set's place used last)
-    uint32_t last = 0; // (the memo found last)
+    uint32_t last = 0, before = 0; // (the memos found last and before it)
     std::vector<uint32_t> written = std::vector<uint32_t>(kRamBytes >> kBlockShift); // (each block's last write)
     uint32_t clock = 1;
     uint32_t generation = 1; // (the kept paths': a memo of another is not kept)
@@ -820,18 +826,24 @@ struct Sh3Paths {
     }
     const Memo *Find(uint32_t from, uint32_t to, int8_t lastLoad) { // (from's bit 0: jumped to; to's: a branch)
         const Memo *m = &memos[last];
-        if (!Holds(*m, from, to, lastLoad)) { // (the one found last: a loop's, as often as not)
-            const uint32_t set = Set(from, to, lastLoad);
-            uint32_t way = 0;
-            if (!Holds(memos[2 * set], from, to, lastLoad)) {
-                if (!Holds(memos[2 * set + 1], from, to, lastLoad)) {
-                    return nullptr;
+        if (!Holds(*m, from, to, lastLoad)) [[unlikely]] {
+            // (the one found last, or the one before it: a loop's two events, its access and its branch, by turns; else
+            // its place in the table)
+            uint32_t at = before;
+            if (!Holds(memos[at], from, to, lastLoad)) {
+                const uint32_t set = Set(from, to, lastLoad);
+                at = 2 * set;
+                if (!Holds(memos[at], from, to, lastLoad)) {
+                    if (!Holds(memos[at + 1], from, to, lastLoad)) {
+                        return nullptr;
+                    }
+                    at++;
                 }
-                way = 1;
             }
-            recent[set] = static_cast<uint8_t>(way);
-            last = 2 * set + way;
-            m = &memos[last];
+            recent[at >> 1] = static_cast<uint8_t>(at & 1);
+            before = last;
+            last = at;
+            m = &memos[at];
         }
         for (uint32_t i = 0; i < m->blocks; i++) {
             if (written[m->block[i]] > m->stamp) {
@@ -986,11 +998,11 @@ inline uint32_t Sh3Timing::Access(Sh3Paths &paths, uint32_t insn, uint32_t addre
 template <typename Code>
 inline uint32_t Sh3Timing::Taken(Sh3Paths &paths, uint32_t branch, uint32_t target, uint64_t now, Code code) {
     uint32_t extra = 0;
+    const uint16_t op = code(branch);
     if (lastInsn == branch + 2 && from == branch + 4) {
         // (its slot made the last access: the branch was stepped on the way to it. The target's fetch then meets the
         // slot's MA at the cache's port and waits a cycle, SH-3 software manual 10.2.1: the port's count does that at
         // the next event; HS3 and the board agree, docs/SLOWDOWN.md)
-        const uint16_t op = code(branch);
         const uint32_t slotCycles = Cycles(code(branch + 2));
         const uint64_t decode = nextDecode + TakenAdvance(op, slotCycles) - slotCycles;
         extra = decode > now ? static_cast<uint32_t>(decode - now) : 0;
@@ -1001,7 +1013,6 @@ inline uint32_t Sh3Timing::Taken(Sh3Paths &paths, uint32_t branch, uint32_t targ
     lastInsn = 0;
     lastTime = now + extra;
     nextDecode = now + extra;
-    const uint16_t op = code(branch);
     lastLoad = (op & 0xF000) == 0xB000 || (op & 0xF0FF) == 0x400B || (op & 0xF0FF) == 0x0003 ? kPrLinked : -1;
     return extra;
 }

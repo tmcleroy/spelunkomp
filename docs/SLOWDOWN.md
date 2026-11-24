@@ -500,6 +500,30 @@ frame of the port slower than 43 ms in the ten-second spans its log gives. While
 47 frames a second for some 40 seconds of the stage's start with the feature on, and not without. Not tried on a
 phone: one slower than that emulator may not keep up in the busiest scenes, which is what turning it off is for.
 
+### The shadow check (tools/shadow/)
+
+The model is made faster only where the result stays the same: every cycle it gives and every field of its state, at
+every event. A build with `-DSHADOW_TIMING=ON` runs the model in use beside its reference, machine/bus_timing_ref.h.
+That is the model as it was before its hot path was first worked on (4d3100e), kept unchanged, which tools/audit.sh
+checks by its hash.
+- At every data access and branch taken, the shadow build compares the cycles each model gives and the state's fields.
+- The cache's 1,024 ways are compared every 256 events and at each frame's end.
+- The first difference stops the run with both states and the last 64 events. A difference planted in the model
+  (an on-chip register a cycle dearer) is caught at the third event of the run.
+- The shadow build is about half as fast as a plain one.
+
+`tools/shadow/full.sh ROMS` builds each CV1000 set's shadow build and a build of origin/main. It plays every set with
+both and compares their per-frame hash logs too, and prints a table of the runs. Each set gets:
+- the check's recipe with the slowdown, translated and interpreted, and without the slowdown;
+- 10,000 frames at the first stage's boss (the state made by the run itself: `--save-on-arrival`, to_boss and out of
+  harm);
+- every later stage begun;
+- 200,000 frames of made-up play;
+- tools/check_tools.sh and online rollback (`--rollback-test`), with the shadow build of the game program.
+
+That is about 400,000 frames a set, a night on 8 cores. `tools/shadow/quick.sh` is the first four kinds of run alone
+(3,000 frames at the boss), about half an hour a set.
+
 ## Not checked
 
 Against a board, the model is checked only by buffi's benchmark (its CPU and blitter tests, on an Ibara PCB:

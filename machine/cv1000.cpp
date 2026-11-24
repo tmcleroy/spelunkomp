@@ -41,6 +41,9 @@ void Cv1000::RunFrame() {
     cpu.Run(m_frameEnd);
     sound.RunTo(cpu.cycles, kCpuHz);
     frame++;
+#ifdef SPELUNK_SHADOW_TIMING
+    cpu.ShadowCheckWhole("the frame's end");
+#endif
 }
 
 // The blitter has run its list (Write: the CPU's eventAt is m_blitterDone only while a list runs, with the feature on)
