@@ -79,11 +79,14 @@ namespace {
              0, {}},
             {"input_display", kTrainingPage, "Input display",
              "The stick and the buttons as the game reads them, drawn in the corner of the picture.", 0, {}},
+            // (1 was On when this was on or off: a file's 1 is On still)
             {"speed_readout", kTrainingPage, "Speed readout",
              "How fast the game itself is going, in the corner: 100% at full speed, less where it slows down (the frames of "
              "the last second in which the game was ready with a new picture). Slowdown is part of these games' scoring and "
-             "survival; this shows where it is.",
-             0, {}},
+             "survival; this shows where it is. With the host's time: beside it, how long this machine took to make each "
+             "frame over the last second, in milliseconds. A board's frame is about 16.7 ms: a machine near or over that "
+             "is too slow for the game, whose slowdown is then the machine's and not the board's.",
+             0, {"Off", "On", "On, with the host's time"}},
 #ifndef SPELUNK_CAVE68K
             // (value 0 is on: the default, as the board is. The name was "board_slowdown" when it was off unless chosen;
             // a file that kept that one's 0 is not read as off now)

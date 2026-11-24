@@ -33,6 +33,9 @@ inline constexpr recomp::i18n::Entry kPortuguese[] = {
     {"No shader: {}", "Sem shader: {}"},
     {"The shader {} didn't load: {}", "O shader {} não carregou: {}"},
     {"The shader {} didn't load: {}. The one before is kept.", "O shader {} não carregou: {}. O anterior continua."},
+    {"Speed readout", "Indicador de velocidade"},
+    {"How fast the game itself is going, in the corner: 100% at full speed, less where it slows down (the frames of the last second in which the game was ready with a new picture). Slowdown is part of these games' scoring and survival; this shows where it is. With the host's time: beside it, how long this machine took to make each frame over the last second, in milliseconds. A board's frame is about 16.7 ms: a machine near or over that is too slow for the game, whose slowdown is then the machine's and not the board's.", "Quão rápido o próprio jogo está indo, no canto: 100% em velocidade total, menos onde ele fica lento (os quadros do último segundo em que o jogo teve uma imagem nova pronta). A lentidão faz parte da pontuação e da sobrevivência nesses jogos; isto mostra onde ela está. Com o tempo da máquina: ao lado, quanto esta máquina levou para fazer cada quadro no último segundo, em milissegundos. Um quadro da placa dura uns 16,7 ms: uma máquina perto disso ou acima é lenta demais para o jogo, e a lentidão então é da máquina e não da placa."},
+    {"On, with the host's time", "Ligado, com o tempo da máquina"},
 };
 
 } // namespace port

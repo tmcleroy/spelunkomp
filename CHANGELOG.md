@@ -5,6 +5,10 @@ Versions follow [Semantic Versioning](https://semver.org/).
 
 ## Unreleased
 
+- **The host's own time a frame** (#18): the game's log (logs/game.log) says once a minute how long this machine took
+  to make each frame (median, p95, the most, against the board's 16.7 ms), and the Speed readout has a new choice, **On,
+  with the host's time**, that shows it beside the game's own speed: the board's slowdown told from the machine's.
+
 ## 0.2.0-beta.1
 
 Mushihimesama Matsuri Ver 1.5 joins the collection (26 games, 31 versions), and your own shaders get one folder for every

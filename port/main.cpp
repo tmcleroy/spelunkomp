@@ -33,6 +33,7 @@
 #include "../runtime/state.h"
 #include "bindings.h"
 #include "crash_log.h"
+#include "host_time.h"
 #include "hud.h"
 #include "i18n.h"
 #include "online.h"
@@ -1907,8 +1908,12 @@ int main(int argc, char **argv) {
     };
     FILE *pictures = pictureLog.empty() ? nullptr : fopen(pictureLog.c_str(), "w");
     const auto frameTime = Hw::kFrameTime;
+    // (the host's own time a frame, port/host_time.h: game.log a minute at a time, and the speed readout's second number)
+    port::HostTime hostTime(std::chrono::duration<double, std::milli>(frameTime).count());
+    double hostShown = 0;
     next = std::chrono::steady_clock::now();
     while (running) {
+        const uint64_t workFrom = SDL_GetTicksNS();
         SDL_Event e;
         while (SDL_PollEvent(&e)) {
             if (net && e.type != SDL_EVENT_QUIT && e.type != SDL_EVENT_GAMEPAD_ADDED && e.type != SDL_EVENT_GAMEPAD_REMOVED) {
@@ -2499,9 +2504,17 @@ int main(int argc, char **argv) {
             if (features[FeatureIndex(ToolkitFeature::InputDisplay)]) {
                 hud.Inputs(board->inputs[0]);
             }
-            if (features[FeatureIndex(ToolkitFeature::SpeedReadout)]) {
-                char words[16];
-                snprintf(words, sizeof words, "%3u%%", (60 - lateFrames) * 100 / 60);
+            if (const int readout = features[FeatureIndex(ToolkitFeature::SpeedReadout)]) {
+                char words[40];
+                if (readout == 2) {
+                    // (the host's time as the last second's mean, changed once a second as the percentage is read)
+                    if (frameCount % 60 == 0 || hostShown == 0) {
+                        hostShown = hostTime.RecentMs();
+                    }
+                    snprintf(words, sizeof words, "%3u%%  HOST %.1f MS", (60 - lateFrames) * 100 / 60, hostShown);
+                } else {
+                    snprintf(words, sizeof words, "%3u%%", (60 - lateFrames) * 100 / 60);
+                }
                 hud.Corner(words);
             }
             if (lagOn() && !replaying) {
@@ -2564,6 +2577,10 @@ int main(int argc, char **argv) {
                            !(stopAfter && !realTime);
         setVsync(paced);
         arcade.WorkDone();
+        if (!paused && !menu.IsOpen()) {
+            const uint64_t workTo = SDL_GetTicksNS();
+            hostTime.Add(workTo - workFrom, workTo);
+        }
         presentPicture();
         if (lag.pressedAt && !rewinding) {
             // (the frame that read the press is on its way to the screen)
@@ -2693,6 +2710,7 @@ int main(int argc, char **argv) {
     if (pictures) {
         fclose(pictures);
     }
+    hostTime.Report(SDL_GetTicksNS());
     const int result = hw.Report();
     if (getenv("SPELUNK_REPORT_INPUT")) {
         fprintf(stderr, "input: %llu reads in %llu frames\n", static_cast<unsigned long long>(controls.reads), static_cast<unsigned long long>(frameCount));
