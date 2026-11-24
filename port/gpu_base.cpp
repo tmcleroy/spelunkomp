@@ -220,6 +220,11 @@ void GpuBase::Close() {
         }
     }
     m_frameAt = 0;
+    if (m_workFence) {
+        SDL_ReleaseGPUFence(m_device, m_workFence);
+        m_workFence = nullptr;
+    }
+    m_workSincePresent = 0;
     m_uploadAt = m_uploadOffset = 0;
     for (SDL_GPUTexture *t : {m_picture, m_overlay, m_layer}) {
         if (t) {
@@ -301,6 +306,27 @@ void GpuBase::EndFrame(SDL_GPUCommandBuffer *cmd) {
     before = fence;
     m_frameAt = (m_frameAt + 1) % kFramesInFlight;
     m_uploadAt = UINT32_MAX; // (the next frame's uploads into a buffer the GPU is not reading)
+    if (m_workFence) {
+        SDL_ReleaseGPUFence(m_device, m_workFence); // (the present's own fence holds the frames from here)
+        m_workFence = nullptr;
+    }
+    m_workSincePresent = 0;
+}
+
+void GpuBase::SubmitWork(SDL_GPUCommandBuffer *cmd) {
+    // (a present between two frames, the usual case, starts the count again, so this never waits then; run-ahead's
+    // frames and online rollback's frames run again, several to a present, wait at most for work from earlier in the
+    // same frame)
+    if (++m_workSincePresent % kFramesInFlight != 0) {
+        SDL_SubmitGPUCommandBuffer(cmd);
+        return;
+    }
+    SDL_GPUFence *fence = SDL_SubmitGPUCommandBufferAndAcquireFence(cmd);
+    if (m_workFence) {
+        SDL_WaitForGPUFences(m_device, true, &m_workFence, 1);
+        SDL_ReleaseGPUFence(m_device, m_workFence);
+    }
+    m_workFence = fence;
 }
 
 void GpuBase::UploadRows(SDL_GPUCopyPass *copy, SDL_GPUTexture *to, int x, int y, int width, int rows, uint32_t offset) {

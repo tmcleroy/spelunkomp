@@ -445,7 +445,7 @@ void Gpu::Run(const NativeList &list) {
             RunDraws(cmd, draws + from, step.count - from);
         }
     }
-    SDL_SubmitGPUCommandBuffer(cmd);
+    SubmitWork(cmd);
 }
 
 void Gpu::PresentScreen(uint32_t scrollX, uint32_t scrollY, int turn, const SDL_FRect &to) {

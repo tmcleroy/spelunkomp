@@ -62,6 +62,12 @@ protected:
     // Rows of `width` texels from the upload buffer (at `offset` into the part MapUpload gave) into a texture, never
     // cycling the texture (what is not written keeps its texels)
     void UploadRows(SDL_GPUCopyPass *copy, SDL_GPUTexture *to, int x, int y, int width, int rows, uint32_t offset = 0);
+    // A frame's drawing submitted (the CV1000's lists, the 68000 boards' and the PGM's sprites and layers: not a
+    // present). Frames run unseen (a game run on to where a mode begins shows one picture in 20) had nothing to hold
+    // them, and queued 20 frames of GPU work before each present: now every kFramesInFlight-th submit since the last
+    // present leaves a fence, and the next such submit waits for the one before, so at most about twice
+    // kFramesInFlight frames are queued
+    void SubmitWork(SDL_GPUCommandBuffer *cmd);
     // Part of a texture brought back, waiting for the GPU
     void Download(SDL_GPUTexture *texture, int x, int y, int w, int h, void *out, uint32_t bytes);
 
@@ -92,6 +98,8 @@ private:
     static constexpr int kFramesInFlight = 2;
     SDL_GPUFence *m_frameFences[kFramesInFlight] = {};
     int m_frameAt = 0;
+    SDL_GPUFence *m_workFence = nullptr; // (SubmitWork's, while no present comes)
+    int m_workSincePresent = 0;
     uint32_t m_uploadAt = 0; // (the upload buffer's next free byte this frame; past its end: cycled at the next map)
     void EndFrame(SDL_GPUCommandBuffer *cmd);
     SDL_GPUTexture *m_picture = nullptr, *m_overlay = nullptr, *m_layer = nullptr;

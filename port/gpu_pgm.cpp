@@ -244,7 +244,7 @@ void GpuPgm::Render(const Igs023 &video) {
     SDL_PushGPUFragmentUniformData(cmd, 0, &p, sizeof p);
     SDL_DrawGPUPrimitives(pass, 3, 1, 0, 0);
     SDL_EndGPURenderPass(pass);
-    SDL_SubmitGPUCommandBuffer(cmd);
+    SubmitWork(cmd);
 }
 
 void GpuPgm::PresentScreen(int turn, const SDL_FRect &to) {

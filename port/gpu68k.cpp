@@ -243,7 +243,7 @@ void Gpu68k::Render(const CaveVideo &video, const NativeFrame68k &frame) {
     SDL_PushGPUFragmentUniformData(cmd, 0, &p, sizeof p);
     SDL_DrawGPUPrimitives(pass, 3, 1, 0, 0);
     SDL_EndGPURenderPass(pass);
-    SDL_SubmitGPUCommandBuffer(cmd);
+    SubmitWork(cmd);
 }
 
 void Gpu68k::PresentScreen(int turn, const SDL_FRect &to) {
