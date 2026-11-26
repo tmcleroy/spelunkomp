@@ -511,6 +511,9 @@ int main(int argc, char **argv) {
             static_cast<unsigned long long>(board->cpu.shadowEvents), static_cast<unsigned long long>(board->cpu.shadowSkips),
             static_cast<unsigned long long>(board->cpu.shadowSkipTurns), static_cast<unsigned long long>(board->cpu.shadowAtOnce));
 #endif
+#ifdef SPELUNK_TIMING_STATS
+    spelunk::g_timingStats.Print(stderr);
+#endif
     if (const char *path = getenv("SPELUNK_INTERPRETED")) {
         board->cpu.SaveInterpreted(path);
     }

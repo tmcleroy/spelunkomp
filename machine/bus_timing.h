@@ -38,7 +38,103 @@
 #define SPELUNK_TIMING_HOT __attribute__((always_inline)) inline
 #define SPELUNK_TIMING_COLD __attribute__((noinline))
 
+#ifdef SPELUNK_TIMING_STATS
+#include <algorithm>
+#include <cstdio>
+#include <unordered_map>
+#define SPELUNK_TS(...) __VA_ARGS__
+#else
+#define SPELUNK_TS(...)
+#endif
+
 namespace spelunk {
+
+#ifdef SPELUNK_TIMING_STATS
+// What the model does, counted (-DTIMING_STATS=ON, a measuring build: off in a release; it changes no count). The
+// headless runner prints it at its end
+struct TimingStats {
+    uint32_t curStart = 0, curEnd = 0; // (the translated block running: its first instruction and past its last; 0: the interpreter's)
+    uint64_t access = 0, accessSecond = 0, branch = 0, branchSlot = 0;
+    uint64_t memoLast = 0, memoSet = 0, memoStale = 0, missFull = 0, streamNew = 0;
+    uint64_t newNotKept = 0, notKeptSteps = 0, notKeptBlocks = 0, notKeptRange = 0;
+    int outcome = 0; // (the last Find's: 0 the last memo, 1 its set, 2 none)
+    uint64_t key[4][3] = {}; // (entry, in the block, outside it, the interpreter's) x (memo last, memo set, found)
+    uint64_t newSteps[8] = {}; // (the paths found: steps 0-16, 17-24, 25-32, 33-48, 49-64, 65-96, 97+; and not known)
+    uint64_t fetchHist[5] = {}, opHist[10] = {};
+    uint64_t lineSame = 0, lineHit = 0, lineMiss = 0;
+    uint64_t portFetch = 0, portFetchCycles = 0, portAccess = 0;
+    uint64_t dataHit = 0, dataFill = 0, dataSingle = 0, dataPosted = 0, dataHeld = 0;
+    struct Block {
+        uint64_t events = 0, extra = 0, found = 0;
+    };
+    std::unordered_map<uint32_t, Block> blocks;
+    void Key(uint32_t from, uint32_t insn) {
+        const uint32_t f = from & ~1u;
+        int k = 2;
+        if (curStart == 0) {
+            k = 3;
+        } else if ((from & 1) && f == curStart) {
+            k = 0;
+        } else if (!(from & 1) && curStart < f && f <= insn && insn < curEnd) {
+            k = 1;
+        }
+        key[k][outcome]++;
+    }
+    void Event(uint32_t extra) {
+        Block &b = blocks[curStart];
+        b.events++;
+        b.extra += extra;
+    }
+    void Print(FILE *out) const {
+        const auto u = [](uint64_t v) { return static_cast<unsigned long long>(v); };
+        const uint64_t events = access + branch, streams = memoLast + memoSet + streamNew;
+        fprintf(out, "timing stats: events %llu: access %llu (second %llu, not streamed), branch %llu (slot direct %llu)\n", u(events),
+                u(access), u(accessSecond), u(branch), u(branchSlot));
+        fprintf(out, "timing stats: streams %llu: memo last %llu, memo set %llu, found %llu (of them memo stale %llu, set full %llu); "
+                     "found not kept %llu (steps > 16 %llu, blocks > 4 %llu, tail/span %llu)\n",
+                u(streams), u(memoLast), u(memoSet), u(streamNew), u(memoStale), u(missFull), u(newNotKept), u(notKeptSteps),
+                u(notKeptBlocks), u(notKeptRange));
+        static const char *const names[4] = {"entry", "in block", "outside", "interpreter"};
+        uint64_t all = 0, served = 0;
+        for (int k = 0; k < 4; k++) {
+            const uint64_t n = key[k][0] + key[k][1] + key[k][2];
+            all += n;
+            served += k < 2 ? n : 0;
+            fprintf(out, "timing stats: key %-11s %llu (memo last %llu, set %llu, found %llu)\n", names[k], u(n), u(key[k][0]),
+                    u(key[k][1]), u(key[k][2]));
+        }
+        fprintf(out, "timing stats: s = (entry + in block) / all = %.4f\n", all ? static_cast<double>(served) / all : 0.0);
+        fprintf(out, "timing stats: found, steps: <=16 %llu, 17-24 %llu, 25-32 %llu, 33-48 %llu, 49-64 %llu, 65-96 %llu, 97+ %llu; not known %llu\n",
+                u(newSteps[0]), u(newSteps[1]), u(newSteps[2]), u(newSteps[3]), u(newSteps[4]), u(newSteps[5]), u(newSteps[6]),
+                u(newSteps[7]));
+        fprintf(out, "timing stats: plan fetches 0..4+:");
+        for (uint64_t v : fetchHist) {
+            fprintf(out, " %llu", u(v));
+        }
+        fprintf(out, "; ops 0..9+:");
+        for (uint64_t v : opHist) {
+            fprintf(out, " %llu", u(v));
+        }
+        fprintf(out, "\ntiming stats: FetchLine same %llu, hit %llu, miss %llu; port delays: fetch %llu (%llu cycles), access %llu\n",
+                u(lineSame), u(lineHit), u(lineMiss), u(portFetch), u(portFetchCycles), u(portAccess));
+        fprintf(out, "timing stats: data hit %llu, fill %llu, single %llu, posted %llu, held %llu\n", u(dataHit), u(dataFill),
+                u(dataSingle), u(dataPosted), u(dataHeld));
+        std::vector<std::pair<uint32_t, Block>> list(blocks.begin(), blocks.end());
+        for (int by = 0; by < 2; by++) {
+            std::sort(list.begin(), list.end(), [by](const auto &a, const auto &b) {
+                return by == 0 ? a.second.events > b.second.events : a.second.extra > b.second.extra;
+            });
+            fprintf(out, "timing stats: the top 40 blocks by %s (start: events, extra cycles, paths found; 00000000 the interpreter's)\n",
+                    by == 0 ? "events" : "extra cycles");
+            for (size_t i = 0; i < list.size() && i < 40; i++) {
+                fprintf(out, "timing stats:   %08X: %llu %llu %llu\n", list[i].first, u(list[i].second.events), u(list[i].second.extra),
+                        u(list[i].second.found));
+            }
+        }
+    }
+};
+inline TimingStats g_timingStats;
+#endif
 
 struct Sh3Paths;
 
@@ -259,6 +355,7 @@ struct Sh3Timing {
         }
         if (area == 3) {
             if (write) {
+                SPELUNK_TS(g_timingStats.dataHeld++;)
                 return HeldWrite(t);
             }
             const uint64_t start = t > sdramFree ? t : sdramFree;
@@ -548,6 +645,7 @@ struct Sh3Timing {
                     const uint64_t slot = PortFree(decode - lead);
                     PortTake(slot);
                     if (slot + lead > decode) {
+                        SPELUNK_TS(g_timingStats.portFetch++; g_timingStats.portFetchCycles += slot + lead - decode;)
                         decode = slot + lead;
                     }
                 }
@@ -606,13 +704,16 @@ struct Sh3Timing {
     SPELUNK_TIMING_HOT uint32_t FetchLine(uint32_t a, uint64_t t) { // (a cached address: a plan's)
         const uint32_t line = Physical(a) / kLineBytes;
         if (line == lastFetchLine) {
+            SPELUNK_TS(g_timingStats.lineSame++;)
             return 0;
         }
         lastFetchLine = line;
         if (const int w = Find(line); w >= 0) {
+            SPELUNK_TS(g_timingStats.lineHit++;)
             Touch(line % kSets, static_cast<uint32_t>(w));
             return 0;
         }
+        SPELUNK_TS(g_timingStats.lineMiss++;)
         return Fill(a, t, false);
     }
 
@@ -735,8 +836,17 @@ struct Sh3Timing {
 // written; which paths are kept changes no count. So this is not part of the state (a state loaded forgets them),
 // and each block of main RAM a path read keeps the time of its last write, which a kept path checks.
 struct Sh3Paths {
-    static constexpr uint32_t kMemoBits = 13, kMemos = 1u << kMemoBits, kMemoSteps = 16, kMemoBlocks = 4;
-    static constexpr uint32_t kBlockShift = 7, kRamBytes = 0x01000000u;
+#ifndef SPELUNK_MEMO_BITS
+#define SPELUNK_MEMO_BITS 13
+#endif
+#ifndef SPELUNK_MEMO_BLOCK_SHIFT
+#define SPELUNK_MEMO_BLOCK_SHIFT 7
+#endif
+#ifndef SPELUNK_MEMO_STEPS
+#define SPELUNK_MEMO_STEPS 16
+#endif
+    static constexpr uint32_t kMemoBits = SPELUNK_MEMO_BITS, kMemos = 1u << kMemoBits, kMemoSteps = SPELUNK_MEMO_STEPS, kMemoBlocks = 4;
+    static constexpr uint32_t kBlockShift = SPELUNK_MEMO_BLOCK_SHIFT, kRamBytes = 0x01000000u;
     // (the SH3's main RAM, as the walk reads it: elsewhere is read as 0, which no write changes)
     static bool IsRam(uint32_t a) {
         return (a & 0x1F000000u) == 0x0C000000u && a < 0xE0000000u;
@@ -836,24 +946,30 @@ struct Sh3Paths {
     }
     const Memo *Find(uint32_t from, uint32_t to, int8_t lastLoad) { // (from's bit 0: jumped to; to's: a branch)
         const Memo *m = &memos[last];
+        SPELUNK_TS(g_timingStats.outcome = 0;)
         if (!Holds(*m, from, to, lastLoad)) { // (the one found last: a loop's, as often as not)
             const uint32_t set = Set(from, to, lastLoad);
             uint32_t way = 0;
             if (!Holds(memos[2 * set], from, to, lastLoad)) {
                 if (!Holds(memos[2 * set + 1], from, to, lastLoad)) {
+                    SPELUNK_TS(g_timingStats.outcome = 2;
+                               g_timingStats.missFull += memos[2 * set].generation == generation && memos[2 * set + 1].generation == generation ? 1 : 0;)
                     return nullptr;
                 }
                 way = 1;
             }
+            SPELUNK_TS(g_timingStats.outcome = 1;)
             recent[set] = static_cast<uint8_t>(way);
             last = 2 * set + way;
             m = &memos[last];
         }
         for (uint32_t i = 0; i < m->blocks; i++) {
             if (written[m->block[i]] > m->stamp) {
+                SPELUNK_TS(g_timingStats.outcome = 2; g_timingStats.memoStale++;)
                 return nullptr;
             }
         }
+        SPELUNK_TS(if (g_timingStats.outcome == 0) { g_timingStats.memoLast++; } else { g_timingStats.memoSet++; })
         return m;
     }
     void Keep(uint32_t from, uint32_t to, const Sh3Timing::PathInfo &info, const Sh3Timing::Plan &plan, const Watching &watching) {
@@ -885,7 +1001,9 @@ struct Sh3Paths {
 template <typename Code>
 inline uint32_t Sh3Timing::Stream(Sh3Paths &paths, uint32_t insn, bool branch, bool cpuSlot, uint64_t now, Code code) {
     // (the path depends on the code alone: a path found before, its code not written since, is the same)
-    if (const Sh3Paths::Memo *memo = paths.Find(from, insn | (branch ? 1u : 0u), lastLoad)) {
+    const Sh3Paths::Memo *memo = paths.Find(from, insn | (branch ? 1u : 0u), lastLoad);
+    SPELUNK_TS(g_timingStats.Key(from, insn);)
+    if (memo) {
         return Run(memo->fetch, memo->fetches, memo->op, memo->ops, memo->tail, memo->span, memo->info, branch, cpuSlot, now);
     }
     return StreamNew(paths, insn, branch, cpuSlot, now, code);
@@ -929,6 +1047,24 @@ uint32_t Sh3Timing::StreamNew(Sh3Paths &paths, uint32_t insn, bool branch, bool 
     }
     Plan plan;
     MakePlan(path, info, branch, plan);
+    SPELUNK_TS({
+        TimingStats &ts = g_timingStats;
+        ts.streamNew++;
+        ts.blocks[ts.curStart].found++;
+        static const uint32_t edges[6] = {16, 24, 32, 48, 64, 96};
+        uint32_t b = 0;
+        while (b < 6 && count > edges[b]) {
+            b++;
+        }
+        ts.newSteps[known ? b : 7]++;
+        const bool steps = count > Sh3Paths::kMemoSteps, many = watching.tooMany, range = plan.tail > 0xFFFF || plan.span > 0xFFFF;
+        if (steps || many || range) {
+            ts.newNotKept++;
+            ts.notKeptSteps += steps ? 1 : 0;
+            ts.notKeptBlocks += many ? 1 : 0;
+            ts.notKeptRange += range ? 1 : 0;
+        }
+    })
     paths.Keep(from, insn | (branch ? 1u : 0u), info, plan, watching);
     return Run(plan.fetch, plan.fetches, plan.op, plan.ops, plan.tail, plan.span, info, branch, cpuSlot, now);
 }
@@ -937,6 +1073,7 @@ uint32_t Sh3Timing::StreamNew(Sh3Paths &paths, uint32_t insn, bool branch, bool 
 SPELUNK_TIMING_HOT uint32_t Sh3Timing::Run(const uint32_t *fetch, uint32_t fetches, const Plan::Op *op, uint32_t ops,
                                                    uint32_t tail, uint32_t span, const PathInfo &info, bool branch,
                                                    bool cpuSlot, uint64_t now) {
+    SPELUNK_TS(g_timingStats.fetchHist[std::min<uint32_t>(fetches, 4)]++; g_timingStats.opHist[std::min<uint32_t>(ops, 9)]++;)
     uint32_t extra = 0;
     uint64_t decode = Walk(fetch, fetches, op, ops, tail, span, info.known, now, extra);
     if (branch) {
@@ -946,6 +1083,7 @@ SPELUNK_TIMING_HOT uint32_t Sh3Timing::Run(const uint32_t *fetch, uint32_t fetch
         return extra;
     }
     if (PortBusy(decode)) {
+        SPELUNK_TS(g_timingStats.portAccess++;)
         decode++; // (this access's turn at the port)
     }
     PortTake(decode);
@@ -964,27 +1102,33 @@ template <typename Code>
 inline uint32_t Sh3Timing::Access(Sh3Paths &paths, uint32_t insn, uint32_t address, uint32_t bytes, bool write, bool cpuSlot, uint64_t now, Code code) {
     uint32_t extra = 0;
     const bool streamed = insn != lastInsn || now != lastTime; // (not the same instruction's second access)
+    SPELUNK_TS(g_timingStats.access++; g_timingStats.accessSecond += streamed ? 0 : 1;)
     if (streamed) {
         extra += Stream(paths, insn, false, cpuSlot, now, code);
     }
     const uint64_t t = now + extra;
     if (!Cached(address)) {
+        SPELUNK_TS(g_timingStats.dataSingle += write && Area(address) == 3 && Region(address) != 7 ? 0 : 1;)
         extra += Single(address, bytes, write, t);
     } else {
         const uint32_t line = Physical(address) / kLineBytes;
         const int w = Find(line);
         if (w >= 0) {
+            SPELUNK_TS(g_timingStats.dataHit++;)
             Touch(line % kSets, static_cast<uint32_t>(w));
             if (write) {
                 if (WriteThrough(address)) {
+                    SPELUNK_TS(g_timingStats.dataPosted++;)
                     extra += PostedWrite(now + extra);
                 } else {
                     ways[line % kSets][w].dirty = 1;
                 }
             }
         } else if (write && WriteThrough(address)) {
+            SPELUNK_TS(g_timingStats.dataPosted += Area(address) == 3 ? 1 : 0; g_timingStats.dataSingle += Area(address) == 3 ? 0 : 1;)
             extra += Area(address) == 3 ? PostedWrite(t) : Single(address, bytes, true, t); // (no line kept)
         } else {
+            SPELUNK_TS(g_timingStats.dataFill++;)
             extra += Fill(address, t, write);
         }
     }
@@ -1002,7 +1146,9 @@ inline uint32_t Sh3Timing::Access(Sh3Paths &paths, uint32_t insn, uint32_t addre
 template <typename Code>
 inline uint32_t Sh3Timing::Taken(Sh3Paths &paths, uint32_t branch, uint32_t target, uint64_t now, Code code) {
     uint32_t extra = 0;
+    SPELUNK_TS(g_timingStats.branch++;)
     if (lastInsn == branch + 2 && from == branch + 4) {
+        SPELUNK_TS(g_timingStats.branchSlot++;)
         // (its slot made the last access: the branch was stepped on the way to it. The target's fetch then meets the
         // slot's MA at the cache's port and waits a cycle, SH-3 software manual 10.2.1: the port's count does that at
         // the next event; HS3 and the board agree, docs/SLOWDOWN.md)
