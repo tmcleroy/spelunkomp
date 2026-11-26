@@ -15,12 +15,13 @@
 #   tools/release/pgo.sh               # every game (GAMES="a b": those), about a minute a game
 #   env: PGO_FRAMES=3600 (the frames of each run after the game begins)
 # Each game's profile is kept (build/pgo/games/<id>.profdata) with what it was made from: the game's own code (its
-# translated code and games/<id>) and the compiler. A game is played again only when one of those changed, or with
-# PGO_FULL=1; then every game's kept profile is merged. A profile still matches the code the games share where that
-# code is as it was: what changed since builds without a profile, and macos.sh's build says so (clang's
-# -Wprofile-instr-out-of-date), as this does when the shared code changed since a game was played. PGO_KEPT=folder:
-# where the kept profiles are (build/pgo/games unless said: a folder outside the worktree, for a release made in a
-# worktree made anew each time, docs/RELEASING.md)
+# translated code, followed through a link, and games/<id>), the compiler, the code the games share (the boards, the
+# renderers, the program, recomp-common, third_party/, CMakeLists.txt and this script, the training's recipe) and the
+# commit. A game is played again when any of those changed, or with PGO_FULL=1; then every game's kept profile is
+# merged. PGO_KEEP_SHARED=1: a game whose own code is as it was keeps its profile though the shared code changed
+# (said, and macos.sh warns: the shared code's hottest functions that changed build without a profile). PGO_PLAN=1:
+# say which games would be played, and stop. PGO_KEPT=folder: where the kept profiles are (build/pgo/games unless
+# said: a folder outside the worktree, for a release made in a worktree made anew each time, docs/RELEASING.md)
 set -eu
 . "$(dirname "$0")/lib.sh"
 BUILD="$ROOT/build/pgo-train"
@@ -31,16 +32,19 @@ ARCH="-DCMAKE_OSX_DEPLOYMENT_TARGET=13.0 -DCMAKE_OSX_ARCHITECTURES=arm64"
 KEPT="${PGO_KEPT:-$PROF/games}"
 mkdir -p "$KEPT"
 compiler=$(xcrun clang --version | head -1)
-# (a game's own code, as it is now: its translated code, its folder; and the code the games share, from git)
+# (a game's own code, as it is now: its translated code (work/<id>/gen is often a link to another tree: -L follows
+# it), its folder; and the code the games share, from git)
 own_code() {
-    { find "$ROOT/work/$1/gen" "$ROOT/games/$1" -type f -print0 2>/dev/null | sort -z | xargs -0 shasum -a 256 | sed "s#$ROOT/##"
+    { find -L "$ROOT/work/$1/gen" "$ROOT/games/$1" -type f -print0 2>/dev/null | sort -z | xargs -0 shasum -a 256 | sed "s#$ROOT/##"
       echo "$compiler"; } | shasum -a 256 | cut -c1-16
 }
+SHARED="machine runtime port recomp-common third_party CMakeLists.txt tools/release/pgo.sh"
 shared_code() {
-    { git -C "$ROOT" rev-parse HEAD:machine HEAD:runtime HEAD:port HEAD:recomp-common 2>/dev/null
-      git -C "$ROOT" diff HEAD -- machine runtime port recomp-common; } | shasum -a 256 | cut -c1-16
+    { for part in $SHARED; do git -C "$ROOT" rev-parse "HEAD:$part" 2>/dev/null || echo "$part none"; done
+      git -C "$ROOT" diff HEAD -- $SHARED; } | shasum -a 256 | cut -c1-16
 }
 shared=$(shared_code)
+commit="$(git -C "$ROOT" rev-parse HEAD)$(git -C "$ROOT" diff --quiet HEAD -- . ':!work' ':!build' || echo '+changes')"
 ALL_GAMES="$GAMES"
 PLAY_GAMES=""
 for game in $ALL_GAMES; do
@@ -48,10 +52,15 @@ for game in $ALL_GAMES; do
     if [ "${PGO_FULL:-}" = 1 ] || [ ! -f "$KEPT/$game.profdata" ] || [ ! -f "$made" ] || [ "$(sed -n 1p "$made")" != "$(own_code "$game")" ]; then
         PLAY_GAMES="$PLAY_GAMES $game"
     elif [ "$(sed -n 2p "$made")" != "$shared" ]; then
-        echo "pgo: $game's profile kept; the shared code changed since it was made (what changed builds without a profile; PGO_FULL=1 plays it again)"
+        if [ "${PGO_KEEP_SHARED:-}" = 1 ]; then
+            echo "warning: $game's profile kept though the shared code changed since it was made (PGO_KEEP_SHARED=1): what changed builds without a profile" >&2
+        else
+            PLAY_GAMES="$PLAY_GAMES $game"
+        fi
     fi
 done
 echo "pgo: to play:${PLAY_GAMES:- none}"
+[ "${PGO_PLAN:-}" != 1 ] || exit 0
 GAMES="$PLAY_GAMES"
 INSTR=-fprofile-instr-generate
 [ -z "$GAMES" ] || sdl_static macos-arm64 $ARCH
@@ -86,21 +95,27 @@ for game in $GAMES; do
         echo "$features" | grep -q '^slowdown' && play boss-fast --features to_boss=1,out_of_harm=1,slowdown=1
     fi
     xcrun llvm-profdata merge -o "$KEPT/$game.profdata" "$PROF/raw/$game"-*.profraw
-    { own_code "$game"; echo "$shared"; date -u +%Y-%m-%dT%H:%MZ; } > "$KEPT/$game.made"
+    { own_code "$game"; echo "$shared"; date -u +%Y-%m-%dT%H:%MZ; echo "$commit"; } > "$KEPT/$game.made"
     echo "$game: played"
 done
 rm -rf "$home"
 GAMES="$ALL_GAMES"
 profiles=""
+kept="" # (each game not played now, with the commit its profile was made from: macos.sh warns where it is not HEAD)
 for game in $GAMES; do
     profiles="$profiles $KEPT/$game.profdata"
+    case " $PLAY_GAMES " in
+        *" $game "*) ;;
+        *) kept="$kept $game@$(sed -n 4p "$KEPT/$game.made" | grep . || echo unknown)" ;;
+    esac
 done
 xcrun llvm-profdata merge -o "$PROF/spelunkomp.profdata" $profiles
 # (what the profile was made from: macos.sh says so when it builds, and warns when the source is not that any more)
 {
     echo "commit $(git -C "$ROOT" rev-parse HEAD)$(git -C "$ROOT" diff --quiet HEAD -- . ':!work' ':!build' || echo ' (with changes not committed)')"
     echo "games $GAMES"
-    echo "played now:${PLAY_GAMES:- none} (the rest kept from before)"
+    echo "played now:${PLAY_GAMES:- none}"
+    [ -z "$kept" ] || echo "kept$kept"
     echo "made $(date -u +%Y-%m-%dT%H:%MZ) by $(xcrun clang --version | head -1)"
 } > "$PROF/spelunkomp.profdata.txt"
 echo "wrote $PROF/spelunkomp.profdata ($(echo $GAMES | wc -w | tr -d ' ') games, $(echo $PLAY_GAMES | wc -w | tr -d ' ') played now)"
