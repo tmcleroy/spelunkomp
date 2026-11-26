@@ -65,7 +65,8 @@ with (the script stops if there is none), the downloads, how to install on each 
 
    ```sh
    git status --short            # must print nothing: build exactly what was tagged
-   PGO=1 tools/release/all.sh    # macOS, Linux x86_64 and ARM64, Windows, Android, then SHA256SUMS.txt and the
+   PGO=1 PGO_KEPT=../spelunkomp-pgo/games tools/release/all.sh    # macOS, Linux x86_64 and ARM64, Windows, Android,
+                                 # then SHA256SUMS.txt and the
                                  # update-<system>.txt manifests, in build/release/
    ```
 
@@ -75,6 +76,13 @@ with (the script stops if there is none), the downloads, how to install on each 
    `macos.sh` builds with the profile (`build/pgo/spelunkomp.profdata`, and what it was made from beside it). The
    games play exactly as without it (the same hash logs and pictures); only the code is laid out for where the time
    goes. The other systems are built as before; without `PGO=1` macOS is too.
+
+   Each game's profile is kept (in `PGO_KEPT`, a folder outside the worktree, so the next release's new worktree
+   finds them) with what it was made from, and a game is played again only when its own code (its translated code,
+   `games/<id>`) or the compiler changed: a release that changes a few games plays those, minutes instead of an hour
+   and a half. Where the shared code changed since, what changed builds without a profile (pgo.sh and the build say
+   so); `PGO_FULL=1` plays every game again, worth it after a large change to the boards or the slowdown model. A new
+   clang (an Xcode update) plays every game again by itself.
 
 4. **Try each download** before anyone else does: unpack it somewhere else, start the launcher, choose the ROM
    folder, play a game of each board with a gamepad and with the keyboard (the picture, the sound, a save state, the
