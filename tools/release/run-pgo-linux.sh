@@ -9,7 +9,8 @@
 #   - begun at stage 1 and played there, the slowdown on, with the GPU renderer and with the software one;
 #   - the same with run-ahead (1 frame);
 #   - taken straight to stage 1's boss and played there (where the game has that), the slowdown on and off.
-# Every run's counts (.profraw, clang's) are written under OUT/raw, and at the end put in OUT/raw.tar.gz, for
+# Every run's counts (.profraw, clang's) are written under OUT/raw, and at the end put in OUT/raw.tar.gz with the
+# training build's pgo-made.txt (what they were made from), for
 # PGO_USE=<that folder, unpacked> tools/release/linux.sh. Nothing is written anywhere but OUT: its own HOME, saves and
 # settings; the ROM folder is only read.
 #   run-pgo-linux.sh ROMS [GAME...]   (OUT=$HOME/spelunkomp-pgo; PGO_FRAMES=3600, each run's frames after
@@ -43,7 +44,7 @@ while read -r game set title; do
         continue
     fi
     t0=$(date +%s)
-    features=$("$HERE/$game" --list-features 2>/dev/null)
+    features=$(LLVM_PROFILE_FILE=/dev/null "$HERE/$game" --list-features 2>/dev/null)
     frames=$(( ${title:-3000} + FRAMES ))
     bad=""
     play() { # name, then the program's arguments
@@ -64,5 +65,8 @@ while read -r game set title; do
     played=$((played + 1))
     echo "$game: played in $(( $(date +%s) - t0 )) s${bad:+ (ended badly:$bad: $OUT/logs)}"
 done < "$HERE/pgo-games.txt"
+# (what the counts were made from, which linux.sh's PGO_USE reads: the training build's pgo-made.txt, and this run)
+{ cat "$HERE/pgo-made.txt" 2>/dev/null || echo "commit unknown (no pgo-made.txt in $HERE)"
+  echo "played $(date -u +%Y-%m-%dT%H:%MZ): $played games"; } > "$OUT/raw/pgo-made.txt"
 tar -czf "$OUT/raw.tar.gz" -C "$OUT/raw" .
 echo "$played games in $(( $(date +%s) - start )) s; $(find "$OUT/raw" -name '*.profraw' | wc -l) count files in $OUT/raw.tar.gz"
