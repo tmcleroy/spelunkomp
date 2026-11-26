@@ -137,6 +137,7 @@ void SH3::FollowBlock(uint32 start, unsigned steps) {
 }
 
 void SH3::InterpretBlock() {
+    SPELUNK_TS(g_timingStats.curStart = 0;)
     if (recording && (IsRam(PC) || IsFlash(PC))) [[unlikely]] {
         if (RecordBlock(PC, false) && recordStatic) {
             FollowBlock(PC, recordStatic);
@@ -283,6 +284,7 @@ void SH3::RunBlocks(uint64 stop) {
                 if (!timing && t->wait != 0) [[unlikely]] {
                     WaitAhead(*t);
                 }
+                SPELUNK_TS(g_timingStats.curStart = t->block->address; g_timingStats.curEnd = t->block->address + t->block->length;)
                 t->block->run(*this);
                 nativeBlocks++;
             } else {
@@ -316,6 +318,7 @@ void SH3::RunOneBlock(bool native) {
     }
     if (mode == Mode::Native) {
         if (Translation *t = Lookup(PC)) {
+            SPELUNK_TS(g_timingStats.curStart = t->block->address; g_timingStats.curEnd = t->block->address + t->block->length;)
             t->block->run(*this);
             nativeBlocks++;
             return;

@@ -163,9 +163,11 @@ public:
         ShadowEvent(write ? 'W' : 'R', at, a, bytes, got, want);
         cycles += got;
 #else
-        cycles += memoryTiming.Access(timingPaths, at, a, bytes, write, inSlot, cycles,
-                                      [this](uint32 p) -> uint16 { return TimingCode(p); });
+        const uint32 got = memoryTiming.Access(timingPaths, at, a, bytes, write, inSlot, cycles,
+                                               [this](uint32 p) -> uint16 { return TimingCode(p); });
+        cycles += got;
 #endif
+        SPELUNK_TS(g_timingStats.Event(got);)
         if (at == poll.reader) [[unlikely]] {
             poll.read = cycles; // (the poll loop's read: when it is made, after what the model charged)
         }
@@ -179,8 +181,10 @@ public:
         ShadowEvent('B', branch, target, 0, got, want);
         cycles += got;
 #else
-        cycles += memoryTiming.Taken(timingPaths, branch, target, cycles, [this](uint32 p) -> uint16 { return TimingCode(p); });
+        const uint32 got = memoryTiming.Taken(timingPaths, branch, target, cycles, [this](uint32 p) -> uint16 { return TimingCode(p); });
+        cycles += got;
 #endif
+        SPELUNK_TS(g_timingStats.Event(got);)
         if (branch == target + 4) [[unlikely]] {
             PollTurn(target);
         }
