@@ -42,6 +42,7 @@
 #include <algorithm>
 #include <cstdio>
 #include <unordered_map>
+#include <unordered_set>
 #define SPELUNK_TS(...) __VA_ARGS__
 #else
 #define SPELUNK_TS(...)
@@ -56,6 +57,7 @@ struct TimingStats {
     uint32_t curStart = 0, curEnd = 0; // (the translated block running: its first instruction and past its last; 0: the interpreter's)
     uint64_t access = 0, accessSecond = 0, branch = 0, branchSlot = 0;
     uint64_t memoLast = 0, memoSet = 0, memoStale = 0, missFull = 0, streamNew = 0;
+    uint64_t memoVerified = 0, keptWithCode = 0;
     uint64_t newNotKept = 0, notKeptSteps = 0, notKeptBlocks = 0, notKeptRange = 0;
     int outcome = 0; // (the last Find's: 0 the last memo, 1 its set, 2 none)
     uint64_t key[4][3] = {}; // (entry, in the block, outside it, the interpreter's) x (memo last, memo set, found)
@@ -68,7 +70,29 @@ struct TimingStats {
         uint64_t events = 0, extra = 0, found = 0;
     };
     std::unordered_map<uint32_t, Block> blocks;
-    void Key(uint32_t from, uint32_t insn) {
+    // (the blocks of RAM a kept path watches that made it stale: how often, and the writes to them, the last one's
+    // address and instruction)
+    struct Watched {
+        uint64_t stale = 0, writes = 0;
+        uint32_t lastAddress = 0, lastInsn = 0;
+        std::unordered_map<uint32_t, uint64_t> writers; // (instruction: writes)
+    };
+    std::unordered_map<uint32_t, Watched> watched;
+    std::unordered_set<uint64_t> keys; // (every path's key streamed: the memo's working set)
+    std::unordered_map<uint32_t, uint64_t> stepsOfFound; // (a found path's steps: how many found)
+    uint32_t writerInsn = 0; // (the instruction making the write being noted; 0: not the CPU's, the DMA's)
+    void NoteWrite(uint32_t block, uint32_t a) {
+        auto it = watched.find(block);
+        if (it == watched.end()) {
+            return; // (only blocks that have made a path stale are followed)
+        }
+        it->second.writes++;
+        it->second.lastAddress = a;
+        it->second.lastInsn = writerInsn;
+        it->second.writers[writerInsn]++;
+    }
+    void Key(uint32_t from, uint32_t insn, bool branch, int8_t lastLoad) {
+        keys.insert(static_cast<uint64_t>(from) << 32 ^ static_cast<uint64_t>(insn | (branch ? 1u : 0u)) << 5 ^ static_cast<uint64_t>(lastLoad + 1));
         const uint32_t f = from & ~1u;
         int k = 2;
         if (curStart == 0) {
@@ -94,6 +118,7 @@ struct TimingStats {
                      "found not kept %llu (steps > 16 %llu, blocks > 4 %llu, tail/span %llu)\n",
                 u(streams), u(memoLast), u(memoSet), u(streamNew), u(memoStale), u(missFull), u(newNotKept), u(notKeptSteps),
                 u(notKeptBlocks), u(notKeptRange));
+        fprintf(out, "timing stats: stale but its code the same (served): %llu; kept with its code: %llu\n", u(memoVerified), u(keptWithCode));
         static const char *const names[4] = {"entry", "in block", "outside", "interpreter"};
         uint64_t all = 0, served = 0;
         for (int k = 0; k < 4; k++) {
@@ -103,6 +128,7 @@ struct TimingStats {
             fprintf(out, "timing stats: key %-11s %llu (memo last %llu, set %llu, found %llu)\n", names[k], u(n), u(key[k][0]),
                     u(key[k][1]), u(key[k][2]));
         }
+        fprintf(out, "timing stats: distinct paths streamed: %zu\n", keys.size());
         fprintf(out, "timing stats: s = (entry + in block) / all = %.4f\n", all ? static_cast<double>(served) / all : 0.0);
         fprintf(out, "timing stats: found, steps: <=16 %llu, 17-24 %llu, 25-32 %llu, 33-48 %llu, 49-64 %llu, 65-96 %llu, 97+ %llu; not known %llu\n",
                 u(newSteps[0]), u(newSteps[1]), u(newSteps[2]), u(newSteps[3]), u(newSteps[4]), u(newSteps[5]), u(newSteps[6]),
@@ -119,6 +145,20 @@ struct TimingStats {
                 u(lineSame), u(lineHit), u(lineMiss), u(portFetch), u(portFetchCycles), u(portAccess));
         fprintf(out, "timing stats: data hit %llu, fill %llu, single %llu, posted %llu, held %llu\n", u(dataHit), u(dataFill),
                 u(dataSingle), u(dataPosted), u(dataHeld));
+        std::vector<std::pair<uint32_t, Watched>> stale(watched.begin(), watched.end());
+        std::sort(stale.begin(), stale.end(), [](const auto &a, const auto &b) { return a.second.stale > b.second.stale; });
+        fprintf(out, "timing stats: the blocks of RAM that made paths stale (block address: stale finds, writes since first stale; last write; top writers)\n");
+        for (size_t i = 0; i < stale.size() && i < 12; i++) {
+            const Watched &w = stale[i].second;
+            fprintf(out, "timing stats:   %08X: %llu, %llu; last %08X by %08X;", 0x0C000000u | stale[i].first, u(w.stale), u(w.writes),
+                    w.lastAddress, w.lastInsn);
+            std::vector<std::pair<uint32_t, uint64_t>> who(w.writers.begin(), w.writers.end());
+            std::sort(who.begin(), who.end(), [](const auto &a, const auto &b) { return a.second > b.second; });
+            for (size_t j = 0; j < who.size() && j < 4; j++) {
+                fprintf(out, " %08X x%llu", who[j].first, u(who[j].second));
+            }
+            fprintf(out, "\n");
+        }
         std::vector<std::pair<uint32_t, Block>> list(blocks.begin(), blocks.end());
         for (int by = 0; by < 2; by++) {
             std::sort(list.begin(), list.end(), [by](const auto &a, const auto &b) {
@@ -136,7 +176,18 @@ struct TimingStats {
 inline TimingStats g_timingStats;
 #endif
 
-struct Sh3Paths;
+// The paths' memo (Sh3Paths, below): SPELUNK_MEMO_COMPACT=1 (the default) a table of 4-way sets of small tags with
+// the plans apart, long ones in an arena; 0 the table of 2-way sets of whole memos it replaced (for comparison)
+#ifndef SPELUNK_MEMO_COMPACT
+#define SPELUNK_MEMO_COMPACT 1
+#endif
+#if SPELUNK_MEMO_COMPACT
+struct Sh3PathsCompact;
+using Sh3Paths = Sh3PathsCompact;
+#else
+struct Sh3PathsTwoWay;
+using Sh3Paths = Sh3PathsTwoWay;
+#endif
 
 struct Sh3Timing {
     // --- the bus state controller's and the cache's registers, as the game sets them (the values at power-on). The
@@ -835,9 +886,16 @@ struct Sh3Timing {
 // model's time. A path depends on the code under it alone, so one found before is the same while that code is not
 // written; which paths are kept changes no count. So this is not part of the state (a state loaded forgets them),
 // and each block of main RAM a path read keeps the time of its last write, which a kept path checks.
-struct Sh3Paths {
+// (what Find gives a path found before: its plan)
+struct Sh3PathView {
+    const uint32_t *fetch;
+    const Sh3Timing::Plan::Op *op;
+    uint32_t fetches, ops, tail, span;
+    const Sh3Timing::PathInfo *info;
+};
+struct Sh3PathsTwoWay {
 #ifndef SPELUNK_MEMO_BITS
-#define SPELUNK_MEMO_BITS 13
+#define SPELUNK_MEMO_BITS (SPELUNK_MEMO_COMPACT ? 15 : 13)
 #endif
 #ifndef SPELUNK_MEMO_BLOCK_SHIFT
 #define SPELUNK_MEMO_BLOCK_SHIFT 7
@@ -894,7 +952,7 @@ struct Sh3Paths {
     uint32_t clock = 1;
     uint32_t generation = 1; // (the kept paths': a memo of another is not kept)
 
-    Sh3Paths() {
+    Sh3PathsTwoWay() {
         for (Memo &m : memos) {
             m.generation = 0;
         }
@@ -935,6 +993,7 @@ struct Sh3Paths {
         }
         written[Block(a)] = clock;
         written[Block(a + bytes - 1)] = clock;
+        SPELUNK_TS(g_timingStats.NoteWrite(Block(a), a);)
     }
     // (two places for each path, in a set of the table: the one used less recently is replaced)
     static uint32_t Set(uint32_t from, uint32_t to, int8_t lastLoad) {
@@ -944,7 +1003,16 @@ struct Sh3Paths {
     bool Holds(const Memo &m, uint32_t from, uint32_t to, int8_t lastLoad) const {
         return m.generation == generation && m.from == from && m.to == to && m.info.lastLoad == lastLoad;
     }
-    const Memo *Find(uint32_t from, uint32_t to, int8_t lastLoad) { // (from's bit 0: jumped to; to's: a branch)
+    template <typename Code>
+    bool Find(uint32_t from, uint32_t to, int8_t lastLoad, Sh3PathView &v, Code) { // (from's bit 0: jumped to; to's: a branch)
+        const Memo *m = Look(from, to, lastLoad);
+        if (!m) {
+            return false;
+        }
+        v = {m->fetch, m->op, m->fetches, m->ops, m->tail, m->span, &m->info};
+        return true;
+    }
+    const Memo *Look(uint32_t from, uint32_t to, int8_t lastLoad) {
         const Memo *m = &memos[last];
         SPELUNK_TS(g_timingStats.outcome = 0;)
         if (!Holds(*m, from, to, lastLoad)) { // (the one found last: a loop's, as often as not)
@@ -965,14 +1033,15 @@ struct Sh3Paths {
         }
         for (uint32_t i = 0; i < m->blocks; i++) {
             if (written[m->block[i]] > m->stamp) {
-                SPELUNK_TS(g_timingStats.outcome = 2; g_timingStats.memoStale++;)
+                SPELUNK_TS(g_timingStats.outcome = 2; g_timingStats.memoStale++; g_timingStats.watched[m->block[i]].stale++;)
                 return nullptr;
             }
         }
         SPELUNK_TS(if (g_timingStats.outcome == 0) { g_timingStats.memoLast++; } else { g_timingStats.memoSet++; })
         return m;
     }
-    void Keep(uint32_t from, uint32_t to, const Sh3Timing::PathInfo &info, const Sh3Timing::Plan &plan, const Watching &watching) {
+    template <typename Code>
+    void Keep(uint32_t from, uint32_t to, const Sh3Timing::PathInfo &info, const Sh3Timing::Plan &plan, const Watching &watching, Code) {
         if (info.count > kMemoSteps || watching.tooMany || plan.tail > 0xFFFF || plan.span > 0xFFFF) {
             return;
         }
@@ -998,13 +1067,278 @@ struct Sh3Paths {
     }
 };
 
+
+// The same memo, smaller where it is looked at (SPELUNK_MEMO_COMPACT): a busy scene streams some 19,000 paths, more
+// than 2-way sets of whole 240-byte memos held. Here a set is four 16-byte tags (a 64-byte line, the one looked at
+// for every path), and each tag's plan is a 64-byte line apart, read only when the tag matches: the path's info,
+// the range of RAM it read, and up to 3 fetches and 6 steps in place; a longer plan's in the arena (so a path of any
+// length is kept). A path read one stretch of RAM (FindPath walks on from the last event to the access, and what
+// else it reads is beside those), so its range is what it watches: a block of it written since the path was kept
+// makes it stale. SPELUNK_MEMO_VERIFY=1: a path found stale once, and found again, is kept with a copy of the code it
+// read (in the arena), and when it is stale again that is compared with RAM: the same, it is the same path (code
+// beside data written, the game's own variables among its instructions). The arena full, every path is forgotten.
+struct Sh3PathsCompact {
+#ifndef SPELUNK_MEMO_VERIFY
+#define SPELUNK_MEMO_VERIFY 1
+#endif
+    static constexpr uint32_t kMemoBits = SPELUNK_MEMO_BITS, kWays = 4, kSets = (1u << kMemoBits) / kWays;
+    static constexpr uint32_t kMemoSteps = Sh3Timing::kPathMax;          // (no cliff: a path of any length is kept)
+    static constexpr uint32_t kBlockShift = SPELUNK_MEMO_BLOCK_SHIFT, kRamBytes = 0x01000000u;
+    static constexpr uint32_t kBlocks = kRamBytes >> kBlockShift;
+    static constexpr uint32_t kInlineFetches = 3, kInlineOps = 6, kMaxRange = 512;
+    static constexpr uint32_t kArenaFetches = 1u << 16, kArenaOps = 1u << 17, kArenaCode = 1u << 17;
+    static constexpr uint32_t kNone = 0xFFFFFFFFu;
+    static bool IsRam(uint32_t a) {
+        return (a & 0x1F000000u) == 0x0C000000u && a < 0xE0000000u;
+    }
+    static uint32_t Block(uint32_t a) {
+        return (a & (kRamBytes - 1)) >> kBlockShift;
+    }
+    struct alignas(16) Tag {
+        uint32_t from, to, stamp;
+        uint16_t generation; // (the table's, its low bits: a tag of another is empty)
+        int8_t lastLoad;
+        uint8_t spare;
+    };
+    struct alignas(64) Line {
+        Sh3Timing::PathInfo info;
+        uint32_t lo;       // (the RAM it read: from here, `bytes` of it; kNone: none)
+        uint32_t codeAt;   // (the copy of that code in the arena: kNone, none)
+        uint16_t bytes, tail, span;
+        uint8_t fetches, ops;
+        uint8_t outside;   // (its plan in the arena: fetch[0] and fetch[1] where its fetches and steps begin)
+        uint8_t spare;
+        uint32_t fetch[kInlineFetches];
+        Sh3Timing::Plan::Op op[kInlineOps];
+    };
+    static_assert(sizeof(Tag) == 16 && sizeof(Line) == 64, "a tag of 16 bytes, a plan of a line");
+    // The RAM a path being found reads: the lowest and highest addresses (more than kMaxRange apart: not kept)
+    struct Watching {
+        uint32_t lo = kNone, hi = 0;
+        bool tooMany = false;
+        void Read(uint32_t a) {
+            if (!IsRam(a)) {
+                return;
+            }
+            lo = a < lo ? a : lo;
+            hi = a > hi ? a : hi;
+        }
+        bool Wide() const {
+            return lo != kNone && hi - lo + 2 > kMaxRange;
+        }
+    };
+    std::vector<Tag> tags = std::vector<Tag>(kSets * kWays);
+    std::vector<Line> lines = std::vector<Line>(kSets * kWays);
+    std::vector<uint8_t> lru = std::vector<uint8_t>(kSets); // (each set's three bits of pseudo-LRU)
+    std::vector<uint32_t> arenaFetch = std::vector<uint32_t>(kArenaFetches);
+    std::vector<Sh3Timing::Plan::Op> arenaOp = std::vector<Sh3Timing::Plan::Op>(kArenaOps);
+    std::vector<uint16_t> arenaCode = std::vector<uint16_t>(kArenaCode);
+    uint32_t usedFetch = 0, usedOp = 0, usedCode = 0;
+    std::vector<uint32_t> written = std::vector<uint32_t>(kBlocks); // (each block's last write)
+    uint32_t clock = 1;
+    uint32_t generation = 1; // (the kept paths': a tag of another is not kept)
+    // (the path last found stale: found again, it is kept with its code, SPELUNK_MEMO_VERIFY)
+    uint32_t staleFrom = kNone, staleTo = kNone;
+    int8_t staleLoad = 0;
+
+    Sh3PathsCompact() {
+        for (Tag &t : tags) {
+            t.generation = 0;
+        }
+    }
+    void Forget() {
+        usedFetch = usedOp = usedCode = 0;
+        staleFrom = kNone;
+        if (static_cast<uint16_t>(++generation) == 0) {
+            for (Tag &t : tags) {
+                t.generation = 0;
+            }
+            ++generation;
+        }
+    }
+    // (as Sh3PathsTwoWay's: main RAM put back, run-ahead's and rollback's)
+    void PutBack(uint32_t keptClock, uint32_t keptGeneration) {
+        if (generation != keptGeneration || clock == 0xFFFFFFFFu) {
+            Forget();
+            return;
+        }
+        const uint32_t now = ++clock;
+        for (uint32_t &w : written) {
+            if (w > keptClock) {
+                w = now;
+            }
+        }
+    }
+    void Written(uint32_t a, uint32_t bytes) {
+        if (!IsRam(a)) {
+            return;
+        }
+        if (++clock == 0) {
+            Forget();
+            std::fill(written.begin(), written.end(), 0);
+            clock = 1;
+        }
+        written[Block(a)] = clock;
+        written[Block(a + bytes - 1)] = clock;
+        SPELUNK_TS(g_timingStats.NoteWrite(Block(a), a);)
+    }
+    static uint32_t Set(uint32_t from, uint32_t to, int8_t lastLoad) {
+        const uint32_t h = from * 0x9E3779B1u + to * 0x85EBCA77u + static_cast<uint32_t>(lastLoad + 1) * 0xC2B2AE3Du;
+        return ((h ^ h >> 15) * 0x2C1B3C6Du) >> (32 - (kMemoBits - 2));
+    }
+    // (the tree of three bits: bit 0 the half to replace from (1: ways 2 and 3), bit 1 which of ways 0 and 1 (1: way
+    // 1), bit 2 which of ways 2 and 3 (1: way 3); a way used points them away from it)
+    void Touch(uint32_t set, uint32_t way) {
+        uint32_t b = lru[set];
+        if (way < 2) {
+            b = (b | 1u) & ~2u;
+            b |= way == 0 ? 2u : 0u;
+        } else {
+            b = (b & ~1u) & ~4u;
+            b |= way == 2 ? 4u : 0u;
+        }
+        lru[set] = static_cast<uint8_t>(b);
+    }
+    uint32_t Victim(uint32_t set) const {
+        const uint8_t b = lru[set];
+        return (b & 1u) ? ((b & 4u) ? 3u : 2u) : ((b & 2u) ? 1u : 0u);
+    }
+    bool Stale(const Line &l, uint32_t stamp) const {
+        if (l.lo == kNone) {
+            return false;
+        }
+        const uint32_t first = Block(l.lo), last = Block(l.lo + l.bytes - 1);
+        for (uint32_t b = first; b <= last; b++) {
+            if (written[b] > stamp) {
+                return true;
+            }
+        }
+        return false;
+    }
+    template <typename Code>
+    bool SameCode(const Line &l, Code code) const {
+        for (uint32_t i = 0; i < l.bytes / 2u; i++) {
+            if (code(l.lo + 2 * i) != arenaCode[l.codeAt + i]) {
+                return false;
+            }
+        }
+        return true;
+    }
+    template <typename Code>
+    bool Find(uint32_t from, uint32_t to, int8_t lastLoad, Sh3PathView &v, Code code) { // (from's bit 0: jumped to; to's: a branch)
+        const uint32_t set = Set(from, to, lastLoad);
+        Tag *t = &tags[set * kWays];
+        const uint16_t g = static_cast<uint16_t>(generation);
+        uint32_t way = 0;
+        while (way < kWays && !(t[way].from == from && t[way].to == to && t[way].lastLoad == lastLoad && t[way].generation == g)) {
+            way++;
+        }
+        if (way == kWays) {
+            SPELUNK_TS(g_timingStats.outcome = 2; g_timingStats.missFull += t[0].generation == g && t[1].generation == g &&
+                                                                              t[2].generation == g && t[3].generation == g ? 1 : 0;)
+            return false;
+        }
+        const Line &l = lines[set * kWays + way];
+        if (Stale(l, t[way].stamp)) [[unlikely]] {
+            if (SPELUNK_MEMO_VERIFY && l.codeAt != kNone && SameCode(l, code)) {
+                t[way].stamp = clock; // (its code the same: the same path)
+                SPELUNK_TS(g_timingStats.memoVerified++;)
+            } else {
+                SPELUNK_TS(g_timingStats.outcome = 2; g_timingStats.memoStale++; g_timingStats.watched[Block(l.lo)].stale++;)
+                staleFrom = from;
+                staleTo = to;
+                staleLoad = lastLoad;
+                return false;
+            }
+        }
+        Touch(set, way);
+        SPELUNK_TS(g_timingStats.outcome = 1; g_timingStats.memoSet++;)
+        if (!l.outside) [[likely]] {
+            v = {l.fetch, l.op, l.fetches, l.ops, l.tail, l.span, &l.info};
+        } else {
+            v = {&arenaFetch[l.fetch[0]], &arenaOp[l.fetch[1]], l.fetches, l.ops, l.tail, l.span, &l.info};
+        }
+        return true;
+    }
+    template <typename Code>
+    void Keep(uint32_t from, uint32_t to, const Sh3Timing::PathInfo &info, const Sh3Timing::Plan &plan, const Watching &watching, Code code) {
+        if (watching.Wide() || plan.tail > 0xFFFF || plan.span > 0xFFFF || plan.fetches > kArenaFetches || plan.ops > kArenaOps) {
+            return;
+        }
+        const bool outside = plan.fetches > kInlineFetches || plan.ops > kInlineOps;
+        const uint32_t bytes = watching.lo == kNone ? 0 : watching.hi - watching.lo + 2;
+        const bool verify = SPELUNK_MEMO_VERIFY && bytes && from == staleFrom && to == staleTo && info.lastLoad == staleLoad;
+        if ((outside && (usedFetch + plan.fetches > kArenaFetches || usedOp + plan.ops > kArenaOps)) ||
+            (verify && usedCode + bytes / 2 > kArenaCode)) {
+            Forget(); // (the arena full: every path is found again)
+        }
+        const uint32_t set = Set(from, to, info.lastLoad);
+        Tag *t = &tags[set * kWays];
+        const uint16_t g = static_cast<uint16_t>(generation);
+        uint32_t way = 0;
+        while (way < kWays && !(t[way].from == from && t[way].to == to && t[way].lastLoad == info.lastLoad && t[way].generation == g)) {
+            way++;
+        }
+        if (way == kWays) {
+            way = 0;
+            while (way < kWays && t[way].generation == g) {
+                way++;
+            }
+            if (way == kWays) {
+                way = Victim(set);
+            }
+        }
+        Touch(set, way);
+        t[way] = {from, to, clock, g, info.lastLoad, 0};
+        Line &l = lines[set * kWays + way];
+        l.info = info;
+        l.lo = bytes ? watching.lo : kNone;
+        l.bytes = static_cast<uint16_t>(bytes);
+        l.tail = static_cast<uint16_t>(plan.tail);
+        l.span = static_cast<uint16_t>(plan.span);
+        l.fetches = static_cast<uint8_t>(plan.fetches);
+        l.ops = static_cast<uint8_t>(plan.ops);
+        l.outside = outside ? 1 : 0;
+        l.codeAt = kNone;
+        if (!outside) {
+            std::memcpy(l.fetch, plan.fetch, plan.fetches * sizeof plan.fetch[0]);
+            std::memcpy(l.op, plan.op, plan.ops * sizeof plan.op[0]);
+        } else {
+            l.fetch[0] = usedFetch;
+            l.fetch[1] = usedOp;
+            std::memcpy(&arenaFetch[usedFetch], plan.fetch, plan.fetches * sizeof plan.fetch[0]);
+            std::memcpy(&arenaOp[usedOp], plan.op, plan.ops * sizeof plan.op[0]);
+            usedFetch += plan.fetches;
+            usedOp += plan.ops;
+        }
+        if (verify) {
+            l.codeAt = usedCode;
+            for (uint32_t i = 0; i < bytes / 2; i++) {
+                arenaCode[usedCode + i] = code(watching.lo + 2 * i);
+            }
+            usedCode += bytes / 2;
+            staleFrom = kNone;
+            SPELUNK_TS(g_timingStats.keptWithCode++;)
+        }
+    }
+};
+
+// (the counters' question: a path too wide to keep)
+inline bool WideWatch(const Sh3PathsTwoWay::Watching &) {
+    return false;
+}
+inline bool WideWatch(const Sh3PathsCompact::Watching &w) {
+    return w.Wide();
+}
+
 template <typename Code>
 inline uint32_t Sh3Timing::Stream(Sh3Paths &paths, uint32_t insn, bool branch, bool cpuSlot, uint64_t now, Code code) {
     // (the path depends on the code alone: a path found before, its code not written since, is the same)
-    const Sh3Paths::Memo *memo = paths.Find(from, insn | (branch ? 1u : 0u), lastLoad);
-    SPELUNK_TS(g_timingStats.Key(from, insn);)
-    if (memo) {
-        return Run(memo->fetch, memo->fetches, memo->op, memo->ops, memo->tail, memo->span, memo->info, branch, cpuSlot, now);
+    Sh3PathView memo;
+    const bool kept = paths.Find(from, insn | (branch ? 1u : 0u), lastLoad, memo, code);
+    SPELUNK_TS(g_timingStats.Key(from, insn, branch, lastLoad);)
+    if (kept) {
+        return Run(memo.fetch, memo.fetches, memo.op, memo.ops, memo.tail, memo.span, *memo.info, branch, cpuSlot, now);
     }
     return StreamNew(paths, insn, branch, cpuSlot, now, code);
 }
@@ -1057,7 +1391,7 @@ uint32_t Sh3Timing::StreamNew(Sh3Paths &paths, uint32_t insn, bool branch, bool 
             b++;
         }
         ts.newSteps[known ? b : 7]++;
-        const bool steps = count > Sh3Paths::kMemoSteps, many = watching.tooMany, range = plan.tail > 0xFFFF || plan.span > 0xFFFF;
+        const bool steps = count > Sh3Paths::kMemoSteps, many = watching.tooMany || WideWatch(watching), range = plan.tail > 0xFFFF || plan.span > 0xFFFF;
         if (steps || many || range) {
             ts.newNotKept++;
             ts.notKeptSteps += steps ? 1 : 0;
@@ -1065,7 +1399,7 @@ uint32_t Sh3Timing::StreamNew(Sh3Paths &paths, uint32_t insn, bool branch, bool 
             ts.notKeptRange += range ? 1 : 0;
         }
     })
-    paths.Keep(from, insn | (branch ? 1u : 0u), info, plan, watching);
+    paths.Keep(from, insn | (branch ? 1u : 0u), info, plan, watching, code);
     return Run(plan.fetch, plan.fetches, plan.op, plan.ops, plan.tail, plan.span, info, branch, cpuSlot, now);
 }
 
@@ -1133,7 +1467,9 @@ inline uint32_t Sh3Timing::Access(Sh3Paths &paths, uint32_t insn, uint32_t addre
         }
     }
     if (write) {
+        SPELUNK_TS(g_timingStats.writerInsn = insn;)
         paths.Written(address, bytes);
+        SPELUNK_TS(g_timingStats.writerInsn = 0;)
     }
     lastInsn = insn;
     lastTime = now + extra;
