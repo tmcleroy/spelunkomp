@@ -25,10 +25,13 @@ public:
     // A frame's writing begins: nothing written yet. `turn`: the words' turn on this picture, in degrees clockwise
     // (the Menu orientation: recomp-common/menu_turn.h), so they stand upright on a monitor turned on its side; the
     // marks (the hit boxes) are the picture's own, never turned
-    void Begin(int w, int h, int turn = 0) {
+    // `large`: the words' letters a board pixel a dot (8 of the board's lines tall, not 16 of the 3x picture's 24): an
+    // arcade monitor at the board's own lines (the compact menu's screen), where the small ones are a few lines and blur
+    void Begin(int w, int h, int turn = 0, bool large = false) {
         m_wordsBefore.swap(m_words);
         m_words.clear();
-        if (w != width || h != height || recomp::turn::Normal(turn) != m_turn) {
+        if (w != width || h != height || recomp::turn::Normal(turn) != m_turn || large != m_large) {
+            m_large = large;
             width = w;
             height = h;
             m_turn = recomp::turn::Normal(turn);
@@ -160,7 +163,7 @@ private:
         const recomp::text::Canvas canvas{m_to, width, height};
         if (!m_note.empty() && m_words.find("N:") != std::string::npos) {
             // (a long one, a shader's error say, in lines across the picture)
-            const float dot = 2, most = static_cast<float>(width) - 48;
+            const float dot = Dot(), most = static_cast<float>(width) - 48;
             const float w = std::min(recomp::text::TextWidth(m_note.c_str(), dot), most);
             const int lines = recomp::text::TextLines(m_note.c_str(), dot, most);
             const float x = (width - w) / 2, y = height * 0.12f;
@@ -169,7 +172,7 @@ private:
             canvas.Text(x, y, dot, most, {255, 255, 255, 255}, m_note.c_str());
         }
         for (const TextAt &t : m_texts) {
-            const float dot = 2;
+            const float dot = Dot();
             const float w = recomp::text::TextWidth(t.words.c_str(), dot);
             float x = t.x * width - (t.align == 0 ? w / 2 : t.align > 0 ? w : 0);
             x = std::max(8.0f, std::min(x, width - w - 8.0f));
@@ -180,16 +183,16 @@ private:
                         t.words.c_str());
         }
         if (m_showCorner) {
-            const float dot = 2;
+            const float dot = Dot();
             const float w = recomp::text::TextWidth(m_corner.c_str(), dot);
             const float x = width - w - 14, y = height - 8 * dot - 14;
             Box(static_cast<int>(x - 6), static_cast<int>(y - 5), static_cast<int>(w + 12), static_cast<int>(8 * dot + 10), 0x90000000u);
             canvas.Text(x, y, dot, 0, {255, 255, 255, 255}, m_corner.c_str());
         }
         if (m_showLine) {
-            const float dot = 2;
+            const float dot = Dot();
             const float w = recomp::text::TextWidth(m_line.c_str(), dot);
-            const float x = (width - w) / 2, y = height - 130.0f; // (above the input display and the corner)
+            const float x = (width - w) / 2, y = height - 130.0f - (dot - 2) * 8; // (above the input display and the corner)
             Box(static_cast<int>(x - 6), static_cast<int>(y - 5), static_cast<int>(w + 12), static_cast<int>(8 * dot + 10), 0x90000000u);
             canvas.Text(x, y, dot, 0, {255, 255, 255, 255}, m_line.c_str());
         }
@@ -227,6 +230,10 @@ private:
     };
     std::vector<TextAt> m_texts;
     std::string m_words, m_wordsBefore, m_note;
+    bool m_large = false;
+    float Dot() const {
+        return m_large ? static_cast<float>(kScale) : 2.0f;
+    }
     bool m_drawn = false, m_showInputs = false, m_showCorner = false, m_showLine = false;
     std::string m_corner, m_line;
     uint32_t m_inputs = 0;

@@ -98,7 +98,10 @@ const recomp::sdl::ArcadeBoard kArcadeBoard{Hw::kWidth, Hw::kHeight, 1e9 / stati
 std::vector<recomp::FeatureInfo> ArcadeFeatures() {
     using namespace recomp::sdl;
     std::vector<recomp::FeatureInfo> list;
-    list.push_back({"crt_resolution", "Arcade monitor", "Full screen resolution", ArcadeDescription(kArcadeBoard), kFeatureLauncherOnly,
+    // (the in-game menu offers only Off for it: a mode the monitor can't take, chosen while playing, could harm it. Said, as
+    // a player looking for the other choices there would think the row broken)
+    list.push_back({"crt_resolution", "Arcade monitor", "Full screen resolution",
+                    ArcadeDescription(kArcadeBoard) + " The in-game menu can only put it back to Off.", kFeatureLauncherOnly,
                     {"Off", ArcadeBoardName(kArcadeBoard), "Super resolution"}});
     list.push_back({"crt_screen", "Arcade monitor", "Screen", kScreenDescription, kFeatureLauncherOnly, {"Main", "Second", "Third", "Fourth"}});
     if (SwitchresBuilt()) {
@@ -2248,7 +2251,7 @@ int main(int argc, char **argv) {
     auto netWaitScreen = [&]() {
         int w = 0, h = 0;
         canvasSize(w, h);
-        hud.Begin(w, h, menuTurnNow());
+        hud.Begin(w, h, menuTurnNow(), compactMenu());
         netScreen.Wait(hud, net.get(), netEnded, tick);
         hud.Changed();
         shown.assign(static_cast<size_t>(w) * h, 0xFF000000u);
@@ -2724,7 +2727,7 @@ int main(int argc, char **argv) {
                 pauseShown = true;
                 int w = 0, h = 0;
                 canvasSize(w, h);
-                hud.Begin(w, h, menuTurnNow());
+                hud.Begin(w, h, menuTurnNow(), compactMenu());
                 hud.Note(("STOPPED  FRAME " + std::to_string(frameCount)).c_str());
                 hud.Changed();
                 hw.SetOverlay(hud);
@@ -3011,7 +3014,7 @@ int main(int argc, char **argv) {
                 // (a CV1000's boot takes a few seconds even so: said, on black, a few times a second)
                 int w = 0, h = 0;
                 canvasSize(w, h);
-                hud.Begin(w, h, menuTurnNow());
+                hud.Begin(w, h, menuTurnNow(), compactMenu());
                 hud.Text(0.5f, 0.5f, 0, "STRAIGHT TO THE TITLE...", 0xFFB0B0B0u);
                 hud.Changed();
                 shown.assign(static_cast<size_t>(w) * h, 0xFF000000u);
@@ -3076,7 +3079,7 @@ int main(int argc, char **argv) {
         {
             int canvasW = 0, canvasH = 0;
             canvasSize(canvasW, canvasH);
-            hud.Begin(canvasW, canvasH, menuTurnNow());
+            hud.Begin(canvasW, canvasH, menuTurnNow(), compactMenu());
             if (paused) {
                 hud.Note(("STOPPED  FRAME " + std::to_string(frameCount)).c_str()); // (a frame on: which it is)
             } else if (noteFrames > 0) {
@@ -3116,7 +3119,7 @@ int main(int argc, char **argv) {
                 for (const Readout &r : ThisGame().readouts) {
                     if (const std::string value = r.value(*board); !value.empty()) {
                         hud.Text(0.015f, y, -1, std::string(r.name) + " " + value, 0xFFFFFFFFu);
-                        y += 0.045f;
+                        y += compactMenu() ? 0.06f : 0.045f; // (the large letters' rows: compactMenu)
                     }
                 }
             }
