@@ -9,7 +9,7 @@
 #   - begun at stage 1 and played there, the slowdown on, with the GPU renderer and with the software one;
 #   - the same with run-ahead (1 frame);
 #   - taken straight to stage 1's boss and played there (where the game has that), the slowdown on and off.
-# Every program's counts (.gcda) are written under OUT/gcda, and at the end put in OUT/gcda.tar.gz, for
+# Every run's counts (.profraw, clang's) are written under OUT/raw, and at the end put in OUT/raw.tar.gz, for
 # PGO_USE=<that folder, unpacked> tools/release/linux.sh. Nothing is written anywhere but OUT: its own HOME, saves and
 # settings; the ROM folder is only read.
 #   run-pgo-linux.sh ROMS [GAME...]   (OUT=$HOME/spelunkomp-pgo; PGO_FRAMES=3600, each run's frames after
@@ -22,8 +22,8 @@ OUT=${OUT:-$HOME/spelunkomp-pgo}
 FRAMES=${PGO_FRAMES:-3600}
 WANT=" $* "
 [ -f "$HERE/pgo-games.txt" ] || { echo "no $HERE/pgo-games.txt: run this from the unpacked training build" >&2; exit 1; }
-rm -rf "$OUT/gcda" "$OUT/home" "$OUT/saves" "$OUT/logs" "$OUT/gcda.tar.gz"
-mkdir -p "$OUT/gcda" "$OUT/home" "$OUT/saves" "$OUT/logs"
+rm -rf "$OUT/raw" "$OUT/home" "$OUT/saves" "$OUT/logs" "$OUT/raw.tar.gz"
+mkdir -p "$OUT/raw" "$OUT/home" "$OUT/saves" "$OUT/logs"
 # (the game session's display, sound and bus, as Steam has them: the GPU renderer needs the display)
 if pid=$(pgrep -x steam | head -1) && [ -n "$pid" ]; then
     for v in DISPLAY WAYLAND_DISPLAY XDG_RUNTIME_DIR DBUS_SESSION_BUS_ADDRESS XDG_SESSION_TYPE PULSE_SERVER; do
@@ -32,8 +32,8 @@ if pid=$(pgrep -x steam | head -1) && [ -n "$pid" ]; then
     done
 fi
 unset SteamGameId SteamAppId
-# (the counts' names are /tmp/spelunkomp-pgo/<object>.gcda: the first two parts of that left out, and OUT/gcda put first)
-export GCOV_PREFIX="$OUT/gcda" GCOV_PREFIX_STRIP=2
+# (each run's counts in a file of its own: the program and its process)
+export LLVM_PROFILE_FILE="$OUT/raw/%m-%p.profraw"
 start=$(date +%s)
 played=0
 while read -r game set title; do
@@ -64,5 +64,5 @@ while read -r game set title; do
     played=$((played + 1))
     echo "$game: played in $(( $(date +%s) - t0 )) s${bad:+ (ended badly:$bad: $OUT/logs)}"
 done < "$HERE/pgo-games.txt"
-tar -czf "$OUT/gcda.tar.gz" -C "$OUT/gcda" .
-echo "$played games in $(( $(date +%s) - start )) s; $(find "$OUT/gcda" -name '*.gcda' | wc -l) count files in $OUT/gcda.tar.gz"
+tar -czf "$OUT/raw.tar.gz" -C "$OUT/raw" .
+echo "$played games in $(( $(date +%s) - start )) s; $(find "$OUT/raw" -name '*.profraw' | wc -l) count files in $OUT/raw.tar.gz"

@@ -15,7 +15,7 @@ RUN dpkg --add-architecture amd64 \
  && printf "Types: deb\nURIs: http://archive.ubuntu.com/ubuntu/\nSuites: noble noble-updates noble-backports\nComponents: main universe restricted multiverse\nArchitectures: amd64\nSigned-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg\n\nTypes: deb\nURIs: http://security.ubuntu.com/ubuntu/\nSuites: noble-security\nComponents: main universe restricted multiverse\nArchitectures: amd64\nSigned-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg\n" > /etc/apt/sources.list.d/amd64.sources \
  && apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates cmake ninja-build ccache python3 curl file zip unzip git pkgconf \
-    gcc libc6-dev crossbuild-essential-amd64 libwayland-bin \
+    gcc libc6-dev crossbuild-essential-amd64 libwayland-bin clang lld llvm libclang-rt-18-dev:amd64 \
     zlib1g-dev:amd64 liblzma-dev:amd64 \
     libx11-dev:amd64 libxext-dev:amd64 libxrandr-dev:amd64 libxcursor-dev:amd64 libxi-dev:amd64 libxss-dev:amd64 \
     libxtst-dev:amd64 libxkbcommon-dev:amd64 libwayland-dev:amd64 wayland-protocols libdecor-0-dev:amd64 \
@@ -34,7 +34,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends rustup && rm -r
  && rustup toolchain install 1.99.1 --profile minimal --no-self-update \
  && rustup default 1.99.1 \
  && rustup target add x86_64-unknown-linux-gnu
-COPY x86_64-linux-gnu.cmake /opt/xbuild/
+COPY x86_64-linux-gnu.cmake x86_64-linux-gnu-clang.cmake /opt/xbuild/
 COPY bin/ /opt/xbuild/bin/
 ENV PATH=/opt/xbuild/bin:/opt/cargo/bin:$PATH \
     CMAKE_TOOLCHAIN_FILE=/opt/xbuild/x86_64-linux-gnu.cmake \

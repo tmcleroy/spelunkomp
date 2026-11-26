@@ -22,23 +22,35 @@ case "$(uname -m)" in
     aarch64|arm64) SYSTEM=linux-arm64 ;;
     *) echo "error: no Linux release for $(uname -m)" >&2; exit 1 ;;
 esac
-BUILD="$ROOT/build/release-$SYSTEM"
+BUILD="$ROOT/build/release-$SYSTEM-${LINUX_CC:-clang}" # (a folder for each compiler: a build folder keeps the one it began with)
 sdl_static "$SYSTEM"
-# Profile-guided optimisation (GCC's), in two builds of the same folder: PGO_GENERATE=1 builds the programs
-# instrumented, each run writing its counts as /tmp/spelunkomp-pgo/<object>.gcda (the object's path from the
-# repository's top, its / as #: -fprofile-prefix-path), which GCOV_PREFIX and GCOV_PREFIX_STRIP=2 move where a run
-# can write (tools/release/run-pgo-linux.sh, on the device); PGO_USE=folder builds them with the counts brought back
-# there (a function the counts do not know, or know from other source, is built as without them, and said:
-# -Wmissing-profile, -Wcoverage-mismatch as a warning)
+# The compiler: clang (LINUX_CC=gcc: gcc, as the releases up to 0.4). The same frames and hashes either way (tools/
+# check.sh's hash logs with the slowdown on, three games of the three boards); clang's code is about 5% faster, and
+# with a profile about 18% (SaiDaiOuJou's busiest scene on a Steam Machine, 2026-11-26), where gcc's own profiles made
+# it about 4% slower
+if [ "${LINUX_CC:-clang}" = clang ]; then
+    case "${CMAKE_TOOLCHAIN_FILE:-}" in
+        */x86_64-linux-gnu.cmake) export CMAKE_TOOLCHAIN_FILE="${CMAKE_TOOLCHAIN_FILE%.cmake}-clang.cmake" ;; # (the cross image)
+        *) export CC=clang CXX=clang++ ;;
+    esac
+    echo "compiler: $(clang --version | head -1)"
+fi
+# Profile-guided optimisation (clang's), in two builds of the same folder: PGO_GENERATE=1 builds the programs
+# instrumented, each run writing its counts as a .profraw (tools/release/run-pgo-linux.sh, on the device: OUT/raw);
+# PGO_USE=folder builds them with the counts brought back there, merged by this clang's llvm-profdata (a function the
+# counts do not know builds as without them; one they know from other source is said: -Wprofile-instr-out-of-date)
 PGO_FLAGS=""
 if [ "${PGO_GENERATE:-}" = 1 ]; then
-    PGO_FLAGS="-fprofile-generate=/tmp/spelunkomp-pgo -fprofile-update=atomic -fprofile-prefix-path=$ROOT"
+    [ "${LINUX_CC:-clang}" = clang ] || { echo "error: PGO is clang's (LINUX_CC=gcc has none)" >&2; exit 1; }
+    PGO_FLAGS="-fprofile-instr-generate"
     echo "PGO: building the programs instrumented"
 elif [ -n "${PGO_USE:-}" ]; then
-    [ -d "$PGO_USE" ] || { echo "error: no folder $PGO_USE of the programs' counts (.gcda)" >&2; exit 1; }
-    PGO_FLAGS="-fprofile-use=$PGO_USE -fprofile-partial-training -fprofile-prefix-path=$ROOT -Wmissing-profile -Wno-error=coverage-mismatch"
+    [ -d "$PGO_USE" ] || { echo "error: no folder $PGO_USE of the programs' counts (.profraw)" >&2; exit 1; }
+    mkdir -p "$BUILD"
+    llvm-profdata merge -o "$BUILD/pgo.profdata" $(find "$PGO_USE" -name '*.profraw')
+    PGO_FLAGS="-fprofile-instr-use=$BUILD/pgo.profdata -Wno-profile-instr-unprofiled -Wno-profile-instr-missing"
     NO_CCACHE=1 # (a cached object would not know the counts had changed)
-    echo "PGO: building with the counts in $PGO_USE ($(find "$PGO_USE" -name '*.gcda' | wc -l | tr -d ' ') files)"
+    echo "PGO: building with the counts in $PGO_USE ($(find "$PGO_USE" -name '*.profraw' | wc -l | tr -d ' ') runs)"
 fi
 # (the flags given every time, empty without PGO: a build folder's cache would keep the last ones)
 build_programs "$BUILD" -DSDL3_DIR="$DEPS/sdl-$SYSTEM/lib/cmake/SDL3" -DCMAKE_C_FLAGS="$PGO_FLAGS" \

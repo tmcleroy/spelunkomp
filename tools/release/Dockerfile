@@ -11,7 +11,7 @@
 FROM ubuntu:24.04
 ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    ca-certificates g++ cmake ninja-build ccache python3 curl file zip unzip git zlib1g-dev \
+    ca-certificates g++ clang lld llvm libclang-rt-18-dev cmake ninja-build ccache python3 curl file zip unzip git zlib1g-dev \
     libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxi-dev libxss-dev libxtst-dev libxkbcommon-dev \
     libwayland-dev wayland-protocols libdecor-0-dev libegl-dev libgl-dev \
     libpulse-dev libasound2-dev libudev-dev libdbus-1-dev libpipewire-0.3-dev \
