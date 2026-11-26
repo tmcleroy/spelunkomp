@@ -10,6 +10,7 @@ namespace spelunk {
 
 namespace {
     uint8_t &Byte(Board &board, uint32_t address) {
+        board.cpu.NoteRamWrite(address); // (run-ahead's keeps: the page written)
         return board.ram[address & (SH3::kRamSize - 1)];
     }
     uint32_t Long(const Board &board, uint32_t address) {

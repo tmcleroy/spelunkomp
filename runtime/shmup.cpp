@@ -33,6 +33,7 @@ namespace {
 #ifdef SPELUNK_CAVE68K
         return board.ram[address & (board.ram.size() - 1)];
 #else
+        board.cpu.NoteRamWrite(address); // (a write, or maybe one: the reference is kept)
         return board.ram[address & (SH3::kRamSize - 1)];
 #endif
     }

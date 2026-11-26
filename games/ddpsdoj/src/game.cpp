@@ -17,6 +17,8 @@ namespace {
         return static_cast<uint32_t>(p[0]) << 24 | static_cast<uint32_t>(p[1]) << 16 | static_cast<uint32_t>(p[2]) << 8 | p[3];
     }
     void Write(Board &board, uint32_t address, uint32_t value) {
+        board.cpu.NoteRamWrite(address); // (run-ahead's keeps: the pages written)
+        board.cpu.NoteRamWrite(address + 3);
         uint8_t *p = &board.ram[address & (SH3::kRamSize - 1)];
         p[0] = static_cast<uint8_t>(value >> 24);
         p[1] = static_cast<uint8_t>(value >> 16);

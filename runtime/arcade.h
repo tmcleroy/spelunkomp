@@ -28,6 +28,9 @@ inline void KeepCredit(Board &board, uint32_t creditsAddress, bool on) {
     uint8_t &credits = board.ram[creditsAddress & (SH3::kRamSize - 1)];
 #endif
     if (credits == 0) {
+#ifndef SPELUNK_CAVE68K
+        board.cpu.NoteRamWrite(creditsAddress); // (run-ahead's keeps: the page written)
+#endif
         credits = 1;
     }
 }

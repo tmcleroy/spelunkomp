@@ -20,6 +20,8 @@ namespace {
         return static_cast<uint16_t>(p[0] << 8 | p[1]);
     }
     void SetLong(Board &board, uint32_t address, uint32_t value) {
+        board.cpu.NoteRamWrite(address); // (run-ahead's keeps: the pages written)
+        board.cpu.NoteRamWrite(address + 3);
         for (int i = 0; i < 4; i++) {
             board.ram[(address + i) & (SH3::kRamSize - 1)] = static_cast<uint8_t>(value >> (24 - 8 * i));
         }

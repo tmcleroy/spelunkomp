@@ -282,6 +282,15 @@ public:
         }
         return ReadSlow(a & ~3u, 4);
     }
+    // Main RAM's 4 KB pages, each with the generation of its last write while a keep is live (Cv1000::KeepNow: run-ahead
+    // and online play's rollback copy, and put back, only the pages written since); null while none has been made
+    uint32 *pageWritten = nullptr;
+    uint32 writeGen = 1;
+    void NoteRamWrite(uint32 a) {
+        if (pageWritten) [[unlikely]] {
+            pageWritten[(a & (kRamSize - 1)) >> 12] = writeGen;
+        }
+    }
     void Write8(uint32 a, uint8 v) {
         if (timing) [[unlikely]] {
             TimeAccess(a, 1, true);
@@ -291,6 +300,7 @@ public:
         }
         if (IsRam(a)) [[likely]] {
             NoteCodeWrite(a);
+            NoteRamWrite(a);
             ram[a & (kRamSize - 1)] = v;
             return;
         }
@@ -305,6 +315,7 @@ public:
         }
         if (IsRam(a)) [[likely]] {
             NoteCodeWrite(a);
+            NoteRamWrite(a);
             v = __builtin_bswap16(v);
             std::memcpy(ram + (a & (kRamSize - 2)), &v, 2);
             return;
@@ -320,6 +331,7 @@ public:
         }
         if (IsRam(a)) [[likely]] {
             NoteCodeWrite(a);
+            NoteRamWrite(a);
             v = __builtin_bswap32(v);
             std::memcpy(ram + (a & (kRamSize - 4)), &v, 4);
             return;
