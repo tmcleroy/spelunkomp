@@ -73,10 +73,11 @@ pgo_prepare() {
             echo "warning: no pgo-made.txt in $PGO_USE: nothing says what these counts were made from" >&2
             echo "warning: ********************************************************************************" >&2
         else
-            sed 's/^/PGO:   /' "$made"
+            # (written on Windows it has CRLF line ends: read without the CR)
+            tr -d '\r' < "$made" | sed 's/^/PGO:   /'
             here=$(source_commit)
-            was=$(sed -n 's/^commit //p' "$made")
-            was_cc=$(sed -n 's/^compiler //p' "$made")
+            was=$(tr -d '\r' < "$made" | sed -n 's/^commit //p')
+            was_cc=$(tr -d '\r' < "$made" | sed -n 's/^compiler //p')
             if [ "${was%+changes}" != "${here%+changes}" ] || [ "$was_cc" != "$compiler" ]; then
                 echo "warning: ********************************************************************************" >&2
                 [ "${was%+changes}" = "${here%+changes}" ] ||
