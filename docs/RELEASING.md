@@ -81,12 +81,22 @@ with (the script stops if there is none), the downloads, how to install on each 
    not the build's, and counts each game's files that had no counts. `PGO=1` with no `PGO_USE` stops before building
    anything; `PGO_LINUX=0` ships Linux without a profile, and says so. Linux ARM64 is built without one.
 
+   **Windows** is built with clang too, llvm-mingw's (pinned in `tools/release/lib.sh`, fetched and checked by
+   `windows.sh`; `WINDOWS_CC=gcc`: Ubuntu's MinGW-w64 gcc, as up to 0.4): the same frames and hashes, and about 16%
+   faster than gcc with a profile made on a Windows PC. `PGO_GENERATE=1 TARGETS=windows tools/release/all.sh` writes
+   the instrumented `Spelunkomp-windows-x64-pgo-train.zip`; unzipped on the PC, `Spelunkomp\run-pgo-windows.ps1 -Roms
+   ROMS` (PowerShell, in the signed-in desktop session: the GPU renderer needs it, so over ssh start it with a
+   scheduled task) plays every game as the Linux one does and writes `%USERPROFILE%\spelunkomp-pgo\raw.zip`.
+   Unzipped into a folder, `PGO_USE_WINDOWS=<that folder>` added to the command above builds Windows with them, with
+   the same checks and warnings as Linux's. `PGO=1` with no `PGO_USE_WINDOWS` stops before building anything;
+   `PGO_WINDOWS=0` ships Windows without a profile, and says so.
+
    `PGO=1` builds the macOS programs with profile-guided optimisation: `tools/release/pgo.sh` first builds every
    game's program instrumented and plays each (stage 1 with either renderer and with run-ahead, and stage 1's boss
    with the slowdown on and off: about three minutes a game, an hour and a half for them all on an M4), then
    `macos.sh` builds with the profile (`build/pgo/spelunkomp.profdata`, and what it was made from beside it). The
    games play exactly as without it (the same hash logs and pictures); only the code is laid out for where the time
-   goes. Windows, Android and Linux ARM64 are built as before; without `PGO=1` macOS is too.
+   goes. Android and Linux ARM64 are built without a profile; without `PGO=1` macOS is too.
 
    Each game's profile is kept (in `PGO_KEPT`, a folder outside the worktree, so the next release's new worktree
    finds them) with what it was made from, and a game is played again only when its own code (its translated code,
@@ -132,9 +142,9 @@ with (the script stops if there is none), the downloads, how to install on each 
 
 7. Add an empty "Unreleased" section to `CHANGELOG.md` for what comes next.
 
-Keep `build/release-windows/symbols/` from the Windows build: its programs unstripped. A Windows crash writes the
-calls that led to it into the game's `logs/game.log` as program+offset (`ddpdoj.exe+0x40ba8`), and
-`tools/release/crash_where.sh build/release-windows/symbols/ddpdoj.exe 0x40ba8 ...` names their functions. Only the
+Keep `build/release-windows-clang/symbols/` from the Windows build: its programs unstripped. A Windows crash writes
+the calls that led to it into the game's `logs/game.log` as program+offset (`ddpdoj.exe+0x40ba8`), and
+`tools/release/crash_where.sh build/release-windows-clang/symbols/ddpdoj.exe 0x40ba8 ...` names their functions. Only the
 same build's programs match.
 
 To check the report on a new build, start a game with `SPELUNKOMP_TEST_CRASH_AT_FRAME=600` in its environment (on

@@ -22,8 +22,107 @@ APP_ID=io.github.tmcleroy.spelunkomp
 SDL_VERSION=3.4.16        # (the same as recomp-common/launcher/launcher.cmake fetches)
 SDL_SHA256=7322236cd12090c3eb40b9728be4d49c76f66ad17d04369584d4ecad5cf77c68
 SDL_MINGW_SHA256=c7ef65bd72eabac6e5b535411dbd8d5824d0aab24fd62ff8812666b336f18a9c
+# llvm-mingw (clang, lld, libc++ and the MinGW-w64 runtime, for UCRT: Windows 10 on), the Windows build's compiler:
+# https://github.com/mstorsjo/llvm-mingw/releases/tag/20261104, its Ubuntu 22.04 builds for each kind of Linux host,
+# checked against the release's own sha256 (windows.sh)
+LLVM_MINGW_VERSION=20261104
+LLVM_MINGW_AARCH64_SHA256=595e95bdffabfc62559fe26e30bdfbccf277cbaed4902793555015ee47306b94
+LLVM_MINGW_X86_64_SHA256=919380403de87dca3c581c2053230cd298af5e891286628ba0613b7fed370926
 sha256() { if command -v sha256sum >/dev/null; then sha256sum "$@"; else shasum -a 256 "$@"; fi; }
 mkdir -p "$OUT" "$DEPS"
+
+# Profile-guided optimisation (clang's), in two builds of the same folder ($BUILD): PGO_GENERATE=1 builds the
+# programs instrumented, each run writing its counts as a .profraw (the system's trainer, on the device: $2 below),
+# with pgo-made.txt beside them: the commit, the games and the compiler they were built from. PGO_USE=folder builds
+# them with the counts brought back there, merged by this clang's llvm-profdata (the first on PATH); it says what
+# they were made from, and warns where that is not this commit or this compiler. A function the counts know from
+# other source is said (-Wprofile-instr-out-of-date); a file with no counts at all is counted for each game and
+# summed up at the end (a game whose every file has none: counts not made from it, or the wrong folder)
+# (the source's commit: git's, or SOURCE_COMMIT, which all.sh passes: a worktree's .git is not in the container)
+source_commit() {
+    if [ -n "${SOURCE_COMMIT:-}" ]; then
+        echo "$SOURCE_COMMIT"
+    elif c=$(git -C "$ROOT" rev-parse HEAD 2>/dev/null); then
+        git -C "$ROOT" diff --quiet HEAD -- . ':!work' ':!build' 2>/dev/null || c="$c+changes"
+        echo "$c"
+    else
+        echo unknown
+    fi
+}
+# pgo_prepare CLANG TRAINER: PGO_FLAGS (empty without PGO), and the counts merged for PGO_USE (CLANG: the compiler's
+# command, for its version; TRAINER: the script that makes the counts, for the messages)
+pgo_prepare() {
+    PGO_FLAGS=""
+    compiler=""
+    if [ "${PGO_GENERATE:-}" = 1 ] || [ -n "${PGO_USE:-}" ]; then
+        compiler=$("$1" --version | head -1)
+    fi
+    if [ "${PGO_GENERATE:-}" = 1 ]; then
+        PGO_FLAGS="-fprofile-instr-generate"
+        echo "PGO: building the programs instrumented, from $(source_commit)"
+        [ "$(source_commit)" != unknown ] ||
+            echo "warning: the source's commit is unknown here (a worktree's .git is not in the container): build this with all.sh, or SOURCE_COMMIT=<commit>" >&2
+    elif [ -n "${PGO_USE:-}" ]; then
+        [ -d "$PGO_USE" ] || { echo "error: no folder $PGO_USE of the programs' counts (.profraw)" >&2; exit 1; }
+        runs=$(find "$PGO_USE" -name '*.profraw' | wc -l | tr -d ' ')
+        [ "$runs" -gt 0 ] || { echo "error: no counts (.profraw) in $PGO_USE: what $2 gives back, unpacked there" >&2; exit 1; }
+        echo "PGO: building with the counts in $PGO_USE ($runs runs)"
+        made=$(find "$PGO_USE" -name pgo-made.txt | head -1)
+        if [ -z "$made" ]; then
+            echo "warning: ********************************************************************************" >&2
+            echo "warning: no pgo-made.txt in $PGO_USE: nothing says what these counts were made from" >&2
+            echo "warning: ********************************************************************************" >&2
+        else
+            # (written on Windows it has CRLF line ends: read without the CR)
+            tr -d '\r' < "$made" | sed 's/^/PGO:   /'
+            here=$(source_commit)
+            was=$(tr -d '\r' < "$made" | sed -n 's/^commit //p')
+            was_cc=$(tr -d '\r' < "$made" | sed -n 's/^compiler //p')
+            if [ "${was%+changes}" != "${here%+changes}" ] || [ "$was_cc" != "$compiler" ]; then
+                echo "warning: ********************************************************************************" >&2
+                [ "${was%+changes}" = "${here%+changes}" ] ||
+                    echo "warning: the counts were made from $was, not this source ($here): the functions changed since build without them (clang says which files, profile-instr-out-of-date)" >&2
+                [ "$was_cc" = "$compiler" ] ||
+                    echo "warning: the counts were made by $was_cc, not this compiler ($compiler)" >&2
+                echo "warning: ********************************************************************************" >&2
+            fi
+        fi
+        mkdir -p "$BUILD"
+        rm -f "$BUILD/pgo.profdata"
+        find "$PGO_USE" -name '*.profraw' -print0 | xargs -0 llvm-profdata merge -o "$BUILD/pgo.profdata"
+        echo "PGO: $(llvm-profdata show "$BUILD/pgo.profdata" | grep 'Total functions')"
+        # (-Wprofile-instr-unprofiled, a file with no counts, on: its lines are taken out of the build's and counted)
+        PGO_FLAGS="-fprofile-instr-use=$BUILD/pgo.profdata"
+        NO_CCACHE=1 # (a cached object would not know the counts had changed)
+    fi
+}
+# pgo_build BUILD: runs the function that builds; with PGO_USE, its log kept and the files with no counts summed up
+pgo_build() {
+    if [ -n "${PGO_USE:-}" ] && [ "${PGO_GENERATE:-}" != 1 ]; then
+        log="$BUILD/pgo-build.log"
+        rm -f "$BUILD/pgo-built"
+        { "$1"; : > "$BUILD/pgo-built"; } 2>&1 | tee "$log" | grep -v -e 'Wprofile-instr-unprofiled' -e '^[0-9]* warnings\{0,1\} generated\.$' || true
+        [ -f "$BUILD/pgo-built" ] || { echo "error: the build failed ($log)" >&2; exit 1; }
+        # (each game's files built, and those of them with no counts: its lines end with "<game>: built"; the launcher last)
+        awk '/Building C(XX)? object/ { files++ } /Wprofile-instr-unprofiled/ { none++ }
+            /^[a-z0-9_]+: built$/ { name = $1; sub(/:$/, "", name); report(name) }
+            END { report("launcher"); if (bad) print "warning: " bad " program(s) built with no counts in any file: the counts are not theirs (PGO_USE the wrong folder, or made from other source)" > "/dev/stderr" }
+            function report(name) {
+                printf "PGO: %s: %d of %d files built with no counts\n", name, none, files
+                if (files > 0 && none == files) bad++
+                files = 0; none = 0
+            }' "$log"
+        echo "PGO: $(grep -c 'Wprofile-instr-out-of-date' "$log" || true) files with functions whose counts are from other source (-Wprofile-instr-out-of-date, $log)"
+    else
+        "$1"
+    fi
+}
+# pgo_made FILE SYSTEM: what a training build's counts are made from (PGO_USE says so, and warns where the build is
+# not that)
+pgo_made() {
+    { echo "commit $(source_commit)"; echo "games $(echo $GAMES)"; echo "compiler $compiler"; echo "system $2"
+      echo "built $(date -u +%Y-%m-%dT%H:%MZ)"; } > "$1"
+}
 
 # SDL 3's source, checked against its published checksum: $DEPS/SDL3-$SDL_VERSION
 sdl_source() {
