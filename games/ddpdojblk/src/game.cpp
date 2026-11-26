@@ -5,6 +5,7 @@
 #include "ddpdojblk.h"
 
 #include <algorithm>
+#include <string>
 
 namespace spelunk {
 
@@ -12,6 +13,26 @@ namespace {
     int Word(const Board &board, uint32_t address) {
         const size_t mask = board.ram.size() - 1;
         return (board.ram[address & mask] << 8) | board.ram[(address + 1) & mask];
+    }
+    // A byte of work RAM, and a word kept in BCD (the game's counters as it shows them) as a number
+    int Byte(const Board &board, uint32_t address) {
+        return board.ram[address & (board.ram.size() - 1)];
+    }
+    int Bcd(int bcd) {
+        int n = 0, scale = 1;
+        for (; bcd; bcd >>= 4, scale *= 10) {
+            n += (bcd & 15) * scale;
+        }
+        return n;
+    }
+    // While a game is played (the ships' byte is 0xFF between games): the readouts show nothing otherwise
+    bool Playing(const Board &board) {
+        return Byte(board, ddpdojblk::kShips) != 0xFF;
+    }
+    // A bar of `cells` cells, `filled` of `full` of them filled: "[#####---]"
+    std::string Bar(int filled, int full, int cells = 10) {
+        const int n = full > 0 ? std::clamp(filled * cells / full, 0, cells) : 0;
+        return "[" + std::string(n, '#') + std::string(cells - n, '-') + "]";
     }
     // The boxes the game's hit test (244D62) uses, read as it reads them
     void HitBoxes(const Board &board, std::vector<HitBox> &out) {
@@ -104,6 +125,31 @@ namespace {
                 box(ship, HitBox::Ship);
             }
         }
+        // The hidden bees: on the screen (or coming down onto it), a line through each along the board's row (up and
+        // down the picture as it stands), one along its column once it is on, and a box about it
+        auto bees = [&](uint32_t from, int slots) {
+            for (int n = 0; n < slots; n++) {
+                const uint32_t at = from + static_cast<uint32_t>(n) * kEnemySize;
+                if (!(Word(board, at) & 0x8000)) {
+                    continue;
+                }
+                const uint32_t picture = static_cast<uint32_t>(Word(board, at + kPicture)) << 16 | Word(board, at + kPicture + 2);
+                if (picture != kBeePicture && picture != kBeePictureLit) {
+                    continue;
+                }
+                const float x = static_cast<int16_t>(Word(board, at + kX)) / 64.0f, y = static_cast<int16_t>(Word(board, at + kY)) / 64.0f;
+                if (y < 0 || y >= 224 || x < 0 || x >= 448 + 64) {
+                    continue;
+                }
+                out.push_back({0, y - 0.5f, 448, y + 0.5f, HitBox::Hidden});
+                if (x < 448) {
+                    out.push_back({x - 0.5f, 0, x + 0.5f, 224, HitBox::Hidden});
+                    out.push_back({x - 6, y - 6, x + 6, y + 6, HitBox::Hidden});
+                }
+            }
+        };
+        bees(kEnemies, kAirSlots);
+        bees(kGroundEnemies, kGroundSlots);
     }
 } // namespace
 
@@ -129,8 +175,55 @@ const Game &ThisGame() {
         f.safeFramesBytes = 1;
         f.bossWord = ddpdojblk::kBossOn;
         f.hitBoxes = HitBoxes;
-        f.hitKinds |= 1u << HitBox::Ground | 1u << HitBox::Shot;
-        return shmup::MakeGame(ddpdojblk::kCredits, f);
+        f.hitKinds |= 1u << HitBox::Ground | 1u << HitBox::Shot | 1u << HitBox::Hidden;
+        Game g = shmup::MakeGame(ddpdojblk::kCredits, f);
+        // (the scoring readouts: the chain, the best chain, the hyper gauge, the hyper items held, the hyper rank,
+        // the bees and the second loop's terms)
+        using namespace ddpdojblk;
+        g.readouts = {
+            {"CHAIN", [](const Board &board) {
+                 return Playing(board) ? std::to_string(Bcd(Word(board, kChain))) + " " +
+                                             Bar(Word(board, kChainGauge), kChainGaugeFull)
+                                       : std::string();
+             }},
+            {"BEST ", [](const Board &board) {
+                 return Playing(board) ? std::to_string(Bcd(Word(board, kChainBest))) : std::string();
+             }},
+            {"HYPER", [](const Board &board) {
+                 if (!Playing(board)) {
+                     return std::string();
+                 }
+                 if (Byte(board, kHyperOn)) {
+                     return "ON LV" + std::to_string(Byte(board, kHyperLevel)) + " " + Bar(Word(board, kHyperLeft), kHyperFull);
+                 }
+                 return std::to_string(std::min(Word(board, kHyperGauge), kHyperFull) * 100 / kHyperFull) + "% " +
+                        Bar(Word(board, kHyperGauge), kHyperFull);
+             }},
+            {"STOCK", [](const Board &board) {
+                 return Playing(board) ? std::to_string(Byte(board, kHyperStock)) : std::string();
+             }},
+            {"H.RANK", [](const Board &board) {
+                 return Playing(board) ? std::to_string(Word(board, kHyperRank)) : std::string();
+             }},
+            {"BEES ", [](const Board &board) {
+                 return Playing(board) ? std::to_string(Word(board, kBees)) + "/10" : std::string();
+             }},
+            // (the second loop's terms as the game tests them at the first's end, while the first is played)
+            {"LOOP2", [](const Board &board) {
+                 if (!Playing(board) || Word(board, kStage) >= 5) {
+                     return std::string();
+                 }
+                 const int lost = Word(board, kShipsLost), bombs = Word(board, kBombsUsed), bees = Word(board, kBeeStages) / 4;
+                 const bool on = !Word(board, kContinued) && (lost <= 2 || bombs <= 3 || bees >= 3);
+                 return "MISS " + std::to_string(lost) + "/2 BOMB " + std::to_string(bombs) + "/3 BEE " +
+                        std::to_string(bees) + "/3 " + (on ? "OK" : "OUT");
+             }},
+        };
+        g.readoutsWhat = "the chain's hits with the time it has left, the best chain this game, the hyper gauge "
+                         "(or, while a hyper is on, its level and the time it has left), the hyper items held, the "
+                         "hyper rank, the bees taken in this stage, and the second loop's terms (ships lost, bombs "
+                         "used, stages with all ten bees) as the game tests them";
+        return g;
     }();
     return game;
 }

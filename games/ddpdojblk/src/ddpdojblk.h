@@ -74,6 +74,48 @@ constexpr uint32_t kLaser1 = 0x811EF2, kLaser2 = 0x811F12;
 constexpr int kShipLaserOn = 0x3F;
 constexpr int kLaserLength = 6, kLaserDown = 8, kLaserUp = 0xA, kLaserEnd = 0x10;
 
+// The hidden bees (found 2026-11-26: the laser held on one from a player's save, 2767E6 run with a6 the bee): an
+// enemy's record each (in kEnemies' 100, or the ground's), put there by the stage as the scroll comes to it, its
+// picture (the long at +0xA) the bee's, 1BCA80 (1BCA34 while it flickers under the laser). Its position as an enemy's.
+// The laser's hit lets the bee go (27F92A: into ten records of 0x2C bytes from 817DC6) and clears the record
+constexpr int kPicture = 0xA;
+constexpr uint32_t kBeePicture = 0x1BCA80, kBeePictureLit = 0x1BCA34;
+
+// --- Player 1's scoring (found 2026-11-26 from headless runs' RAM logs, each against the picture: the hit counter
+// read off the screen frame by frame, the hyper items picked up and used; the code that caps the gauge at 2875E2) ---
+// The chain: the hits now, in BCD (a word: 0x24 for 24 hits), counted up a kill at a time and set to 0 as the next
+// chain begins; and its gauge, a word counted down a frame at a time from 0x38 (a kill with the shot refills it to the
+// top; with the laser, part way), the chain broken at 0
+constexpr uint32_t kChain = 0x81B5DA;
+constexpr uint32_t kChainGauge = 0x81B5C0;
+constexpr int kChainGaugeFull = 0x38;
+// The most hits in one chain this game (BCD, a word)
+constexpr uint32_t kChainBest = 0x81B632;
+// The hyper gauge (a word): filled by kills, chains and bees, a hyper item let go when it reaches kHyperFull (the
+// game holds it there, 287686, and sets it to 0 as the item comes)
+constexpr uint32_t kHyperGauge = 0x81B64A;
+constexpr int kHyperFull = 0x95F;
+// The hyper items held (a byte, up to 5; all used at once by the bomb button)
+constexpr uint32_t kHyperStock = 0x81B65D;
+// The hyper rank (a word): raised by each hyper's level as it begins, and cut to a quarter when a ship is lost (the
+// loss's routine, 24A006). It speeds the enemies' bullets
+constexpr uint32_t kHyperRank = 0x81B646;
+// A byte that is 1 while a hyper is on, and the time it has left (a word, from kHyperFull down to 0)
+constexpr uint32_t kHyperOn = 0x81B659;
+// The level of the hyper on now (a byte: the items used for it; 0 again as it ends)
+constexpr uint32_t kHyperLevel = 0x81B655;
+constexpr uint32_t kHyperLeft = 0x81B642;
+
+// The bees taken in this stage (a word: the bee's routine, 27FBF4, counts it up and gives the tenth its bonus; a
+// stage's start and a ship lost, 27F898, set it to 0, so ten means ten without a ship lost), and the stages whose
+// ten were all taken, four for each (a word: 27FC0C; the bee's value is read from a table by it)
+constexpr uint32_t kBees = 0x817F80;
+constexpr uint32_t kBeeStages = 0x817F82;
+// What the game asks of the first loop to go on to the second (its own test, 290232): player 1's ships lost (a word,
+// 2 at most), bombs used (a word, 3 at most) or 12 in kBeeStages (three stages' bees), and none of it if the game was
+// continued (a word not 0)
+constexpr uint32_t kShipsLost = 0x812938, kBombsUsed = 0x812940, kContinued = 0x81B49A;
+
 // A word negative while player 1's ship is flown (its stage is set before the ship is chosen: Begin at the stage
 // presses the shot on until it is)
 constexpr uint32_t kShipFlown = 0x8103E6;

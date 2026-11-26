@@ -24,6 +24,8 @@ struct HitBox {
         Body,   // an enemy whose body hits the ship (and the player's shots, where the game uses the same box)
         Shot,   // a shot of the player's: what must touch an enemy's box to hurt it
         Ground, // an enemy the shots can hurt whose body never hits the ship (a tank, a turret: on the ground)
+        Hidden, // where something the game hides is, before the player finds it (a secret bonus): the game gives the
+                // boxes that mark it (thin lines across the picture meeting there, a box about it)
         kKinds
     };
     float x0, y0, x1, y1; // (from its top left x0, y0 up to x1, y1: those not in it)
