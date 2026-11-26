@@ -1274,7 +1274,20 @@ int main(int argc, char **argv) {
         bool taken = false;       // (the first was taken as the game's next frame: the frame part runs none)
         Frame took;               // (... that one)
         uint64_t kept = 0, again = 0;
+        // (SPELUNK_AHEAD_TIMES=1, a measurement: the host's time of each frame by what run-ahead did in it, said at the
+        // end; again[n]: the board put back and n frames run, the game's own and those ahead; kept: its frame taken)
+        struct Times {
+            uint64_t n = 0, sum = 0, most = 0;
+            void Add(uint64_t ns) {
+                n++;
+                sum += ns;
+                most = ns > most ? ns : most;
+            }
+        } againTime[4], keptTime;
+        int ranAgain = 0;     // (this frame: the board put back with this many frames to run, 0: not)
+        bool keptNow = false; // (this frame: its first frame ahead taken)
     } aheadKept;
+    const bool aheadTimes = getenv("SPELUNK_AHEAD_TIMES") != nullptr;
     // (the frames ahead let go, the board being made anew or given another state: nothing put back)
     auto aheadForget = [&]() {
         for (const AheadKept::Frame &f : aheadKept.frames) {
@@ -2390,6 +2403,8 @@ int main(int argc, char **argv) {
         const uint64_t workFrom = SDL_GetTicksNS();
         // (run-ahead's kept frame: taken as the game's next, or the board put back, before anything else of the loop
         // can touch the board)
+        aheadKept.ranAgain = 0;
+        aheadKept.keptNow = false;
         if (!aheadKept.frames.empty()) {
             scriptAt(frameCount);
             uint32_t now[3] = {};
@@ -2400,12 +2415,14 @@ int main(int argc, char **argv) {
                 aheadKept.took = std::move(first);
                 aheadKept.frames.pop_front();
                 aheadKept.taken = true;
+                aheadKept.keptNow = true;
                 aheadKept.kept++;
             } else {
                 hw.NetBack(first.place); // (the game's own frame, as it was before the first frame ahead)
                 for (const AheadKept::Frame &f : aheadKept.frames) {
                     hw.NetDrop(f.place);
                 }
+                aheadKept.ranAgain = static_cast<int>(aheadKept.frames.size()) + 1;
                 aheadKept.frames.clear();
                 aheadKept.again++;
             }
@@ -3180,6 +3197,13 @@ int main(int argc, char **argv) {
         if (!paused && !menu.IsOpen()) {
             const uint64_t workTo = SDL_GetTicksNS();
             hostTime.Add(workTo - workFrom, workTo);
+            if (aheadTimes) {
+                if (aheadKept.ranAgain) {
+                    aheadKept.againTime[std::min(aheadKept.ranAgain, 3)].Add(workTo - workFrom);
+                } else if (aheadKept.keptNow) {
+                    aheadKept.keptTime.Add(workTo - workFrom);
+                }
+            }
         }
         presentPicture();
         fpsFrames++;
@@ -3357,6 +3381,17 @@ int main(int argc, char **argv) {
     if (aheadKept.kept + aheadKept.again) {
         printf("run-ahead: %llu frames kept, %llu run again\n", static_cast<unsigned long long>(aheadKept.kept),
                static_cast<unsigned long long>(aheadKept.again));
+        if (aheadTimes) {
+            auto say = [](const char *what, const AheadKept::Times &t) {
+                if (t.n) {
+                    printf("run-ahead times: %s: %llu, mean %.2f ms, most %.2f ms\n", what, static_cast<unsigned long long>(t.n),
+                           t.sum / 1e6 / static_cast<double>(t.n), t.most / 1e6);
+                }
+            };
+            say("a frame kept", aheadKept.keptTime);
+            say("put back, 2 frames run", aheadKept.againTime[2]);
+            say("put back, 3 frames run", aheadKept.againTime[3]);
+        }
     }
     const int result = hw.Report();
     if (getenv("SPELUNK_REPORT_INPUT")) {
