@@ -20,8 +20,8 @@ CC_NAME="${WINDOWS_CC:-clang}"
 BUILD="$ROOT/build/release-windows-$CC_NAME" # (a folder for each compiler: a build folder keeps the one it began with)
 if [ "$CC_NAME" = clang ]; then
     case "$(uname -m)" in
-        x86_64) host=x86_64; want=$LLVM_MINGW_SHA256_x86_64 ;;
-        aarch64|arm64) host=aarch64; want=$LLVM_MINGW_SHA256_aarch64 ;;
+        x86_64) host=x86_64; want=$LLVM_MINGW_X86_64_SHA256 ;;
+        aarch64|arm64) host=aarch64; want=$LLVM_MINGW_AARCH64_SHA256 ;;
         *) echo "error: no llvm-mingw for a $(uname -m) host" >&2; exit 1 ;;
     esac
     export LLVM_MINGW="$DEPS/llvm-mingw-$LLVM_MINGW_VERSION-ucrt-$host"

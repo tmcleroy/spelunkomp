@@ -41,10 +41,11 @@ for archive in "$@"; do
     find "$dir" -type f \( -name 'spelunkomp-launcher' -o -name 'spelunkomp-launcher.exe' -o -name 'libspelunkomp-launcher.so' \) | grep -q . || bad "no launcher"
     find "$dir" -type f -name 'spelunk-headless*' | grep -q . && bad "a check's program (spelunk-headless) inside"
     # (in the programs and libraries: the texts beside them may name example folders. llvm-mingw's libc++abi names
-    # its source files where its release was built, GitHub's runner, which is no one's home)
+    # its source files where its release was built, GitHub's runner, which is no one's home: that folder alone is let
+    # through, written [r] so that this line is no home path itself for tools/audit.sh)
     paths="$(cd "$dir" && for f in $(grep -rlaE --exclude='*.md' --exclude='*.txt' '/Users/[a-z]|/home/[a-z]+/|C:\\Users\\' . || true); do
         grep -aoE '/Users/[a-z][^[:cntrl:]]*|/home/[a-z]+/[^[:cntrl:]]*|C:\\Users\\[^[:cntrl:]]*' "$f" |
-            grep -qv '^/home/runner/work/llvm-mingw/' && echo "$f"
+            grep -qv '^/home/[r]unner/work/llvm-mingw/' && echo "$f"
     done || true)"
     [ -z "$paths" ] || bad "a builder's home path inside: $paths"
     rm -rf "$dir"

@@ -26,8 +26,8 @@ SDL_MINGW_SHA256=c7ef65bd72eabac6e5b535411dbd8d5824d0aab24fd62ff8812666b336f18a9
 # https://github.com/mstorsjo/llvm-mingw/releases/tag/20261104, its Ubuntu 22.04 builds for each kind of Linux host,
 # checked against the release's own sha256 (windows.sh)
 LLVM_MINGW_VERSION=20261104
-LLVM_MINGW_SHA256_aarch64=595e95bdffabfc62559fe26e30bdfbccf277cbaed4902793555015ee47306b94
-LLVM_MINGW_SHA256_x86_64=919380403de87dca3c581c2053230cd298af5e891286628ba0613b7fed370926
+LLVM_MINGW_AARCH64_SHA256=595e95bdffabfc62559fe26e30bdfbccf277cbaed4902793555015ee47306b94
+LLVM_MINGW_X86_64_SHA256=919380403de87dca3c581c2053230cd298af5e891286628ba0613b7fed370926
 sha256() { if command -v sha256sum >/dev/null; then sha256sum "$@"; else shasum -a 256 "$@"; fi; }
 mkdir -p "$OUT" "$DEPS"
 
