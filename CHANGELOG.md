@@ -5,6 +5,11 @@ Versions follow [Semantic Versioning](https://semver.org/).
 
 ## Unreleased
 
+- **The Linux download is built with clang**, and can be built with a profile made on a Steam Machine or Deck
+  (tools/release/linux.sh, run-pgo-linux.sh, docs/RELEASING.md): the same frames and hashes as gcc's build (three
+  games of the three boards compared frame by frame), SaiDaiOuJou's busiest scene 4.4 ms a frame with gcc, 4.2 with
+  clang, 3.7 with clang and a profile on a Steam Machine. gcc's own profiles, which this replaces, made it slower.
+
 ## 0.4.0-beta.1
 
 Run-ahead that costs about one frame instead of two or three, so slowdown as the board and run-ahead fit on a Steam

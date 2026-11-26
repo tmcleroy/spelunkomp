@@ -70,12 +70,23 @@ with (the script stops if there is none), the downloads, how to install on each 
                                  # update-<system>.txt manifests, in build/release/
    ```
 
+   **Linux x86_64** is built with clang (`LINUX_CC=gcc`: gcc, as up to 0.4): the same frames and hashes, about 5%
+   faster, and 15-18% with a profile made on a Steam Machine or Deck before the command above.
+   `PGO_GENERATE=1 TARGETS=linux-x86_64 tools/release/all.sh` writes the instrumented
+   `Spelunkomp-linux-x86_64-pgo-train.tar.gz`; unpacked on the device, in its game session,
+   `Spelunkomp/run-pgo-linux.sh ROMS` plays every game (about two minutes a CV1000 game) and writes
+   `~/spelunkomp-pgo/raw.tar.gz`: the counts, with `pgo-made.txt` (the commit, games and clang they were built from).
+   Unpacked into a folder, `PGO_USE=<that folder>` added to the command above builds Linux x86_64 with them (a folder
+   outside the worktree is mounted read only). The build prints `pgo-made.txt`, warns where its commit or clang is
+   not the build's, and counts each game's files that had no counts. `PGO=1` with no `PGO_USE` stops before building
+   anything; `PGO_LINUX=0` ships Linux without a profile, and says so. Linux ARM64 is built without one.
+
    `PGO=1` builds the macOS programs with profile-guided optimisation: `tools/release/pgo.sh` first builds every
    game's program instrumented and plays each (stage 1 with either renderer and with run-ahead, and stage 1's boss
    with the slowdown on and off: about three minutes a game, an hour and a half for them all on an M4), then
    `macos.sh` builds with the profile (`build/pgo/spelunkomp.profdata`, and what it was made from beside it). The
    games play exactly as without it (the same hash logs and pictures); only the code is laid out for where the time
-   goes. The other systems are built as before; without `PGO=1` macOS is too.
+   goes. Windows, Android and Linux ARM64 are built as before; without `PGO=1` macOS is too.
 
    Each game's profile is kept (in `PGO_KEPT`, a folder outside the worktree, so the next release's new worktree
    finds them) with what it was made from, and a game is played again only when its own code (its translated code,
