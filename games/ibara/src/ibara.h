@@ -84,4 +84,16 @@ constexpr int kShotSize = 52;
 // kOtherShots (0x340 apart, player 2's 0x9C0 on). Found by watching a shot's +0 set as it is fired and cleared as it hits
 constexpr uint32_t kShots = 0x0C285318u, kOtherShots = 0x0C21F8A0u;
 
+// --- What the gadgets read (port/gadgets.h). From the MAME layout for the game linked from epozzobon.it/re, its
+// places for the first program (MAME's ibarao) less 0x30 for this set's later one (the layout's own test), checked
+// 2026-11-27 against RAM dumps here at frames 3,500 and 5,000 of a game: the rank 19.7% then 21.5%, the drop's place
+// moving on ---
+// The rank (a long, counted DOWN as it rises: the layout shows 1 - rank / 0x1000000)
+constexpr uint32_t kRank = 0x0C27DFF8u;
+// The next drop (a byte: its place in the game's round of 25: shot, medal, shot, medal, option, four times over, then
+// shot, medal, shot, medal and a large shot)
+constexpr uint32_t kNextDrop = 0x0C275DC8u;
+// The next medal's worth (a byte: 0 to 8 for 100 to 900, 9 to 18 for 1,000 to 10,000)
+constexpr uint32_t kNextMedal = 0x0C392D78u;
+
 } // namespace spelunk::ibara
