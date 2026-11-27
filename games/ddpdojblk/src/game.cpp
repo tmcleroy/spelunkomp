@@ -25,9 +25,11 @@ namespace {
         }
         return n;
     }
-    // While a game is played (the ships' byte is 0xFF between games): the readouts show nothing otherwise
+    // While a player's game is played (not the attract show's demonstration, nor the title or the logos after one,
+    // whose memory still holds its last game's): the readouts and the hidden bees show nothing otherwise
     bool Playing(const Board &board) {
-        return Byte(board, ddpdojblk::kShips) != 0xFF;
+        using namespace ddpdojblk;
+        return Word(board, kMode) == kModePlayed && !Word(board, kDemoInputs) && !Word(board, kDemoInputs + 2);
     }
     // A bar of `cells` cells, `filled` of `full` of them filled: "[#####---]"
     std::string Bar(int filled, int full, int cells = 10) {
@@ -128,6 +130,9 @@ namespace {
         // The hidden bees: on the screen (or coming down onto it), a line through each along the board's row (up and
         // down the picture as it stands), one along its column once it is on, and a box about it
         auto bees = [&](uint32_t from, int slots) {
+            if (!Playing(board)) {
+                return;
+            }
             for (int n = 0; n < slots; n++) {
                 const uint32_t at = from + static_cast<uint32_t>(n) * kEnemySize;
                 if (!(Word(board, at) & 0x8000)) {

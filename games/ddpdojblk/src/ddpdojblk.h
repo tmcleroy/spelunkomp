@@ -28,6 +28,15 @@ constexpr uint32_t kStage = 0x813092; // the stage, from 0 (a word)
 // end; bits 3 and 4 of the high byte set as the boss is beaten, 242958)
 constexpr uint32_t kBossOn = 0x8130F8;
 
+// What the game is doing (a word, found 2026-11-27 by RAM logs of a whole round: the boot, the title, a ship chosen, a
+// game played to its end, the continue, the logos and the attract show): 0x0A while a stage is played, 9 as a ship is
+// chosen and for a frame at a ship lost, 0 on the title, the logos and the continue. The attract show's demonstration
+// plays as a game does (0x0A), with its inputs read from a table whose place is kept here (a long, set at 25C5D6: not 0
+// only then). The enemies' records a demonstration or a game leaves are not cleared until the next begins
+constexpr uint32_t kMode = 0x80E3CA;
+constexpr int kModePlayed = 0x0A;
+constexpr uint32_t kDemoInputs = 0x812E98;
+
 // --- Player 1's record ---
 // The ships left besides the one flown (the low byte of the word at 8130BE: 2 for a new game, 0xFF while no game is
 // played)
