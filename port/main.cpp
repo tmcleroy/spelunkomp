@@ -20,6 +20,7 @@
 //
 // Input lag (docs/LAG.md): the host's devices are read when the game reads its ports (once a frame, in its vertical
 // sync interrupt), not at the top of the host's loop, and each frame is shown as soon as it is done.
+#include "keep_awake.h"
 #include "../machine/board.h"
 #include "../machine/zip.h"
 #include "../recomp-common/arcade_screen.h"
@@ -2527,6 +2528,14 @@ int main(int argc, char **argv) {
     };
     while (running) {
         const uint64_t workFrom = SDL_GetTicksNS();
+        // (Processor between frames, port/keep_awake.h: Light (0), Off (1), Full (2); Light is Full with run-ahead's 2
+        // frames or more)
+        {
+            static const size_t keepAwakeAt = FeatureIndex(std::string("keep_awake"));
+            const int chosen = keepAwakeAt < features.size() ? features[keepAwakeAt] : 0;
+            const int runAhead = features[FeatureIndex(ToolkitFeature::RunAhead)];
+            awake::Use(chosen == 1 ? 0 : chosen == 2 || (net == nullptr && runAhead >= 2) ? 2 : 1);
+        }
         // (run-ahead's kept frame: taken as the game's next, or the board put back, before anything else of the loop
         // can touch the board)
         if (!aheadKept.frames.empty()) {
@@ -3483,7 +3492,7 @@ int main(int argc, char **argv) {
         next += fast ? frameTime / 6 : frameTime * rate.ticks / rate.frames;
         const auto now = std::chrono::steady_clock::now();
         if (next > now) {
-            std::this_thread::sleep_until(next);
+            awake::PaceUntil(next); // (slept, or the last of it spun: Processor between frames, port/keep_awake.h)
         } else if (now - next > frameTime * 4) {
             next = now; // (fell behind: start again from now)
         }

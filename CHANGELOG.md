@@ -10,6 +10,11 @@ Versions follow [Semantic Versioning](https://semver.org/).
   priority; the PGM: the sprites behind, the background, the sprites, the text; the CV1000: the frame's draws in the
   order the game made them), each sprite by itself, and the hit boxes and readouts as layers of their own, in
   cps2recomp's files: the launcher's Open diorama shows them in 3D (docs/FEATURES.md, Scene export).
+- **Processor between frames**, on the Game page: the processor kept from turning its clock down while the program
+  waits for the next frame, which on a Steam Machine let it fall from 4.8 to 3.7 GHz in play. Light (the default)
+  spends the last 3 ms of each wait busy, Full all of it (more power and battery); with run-ahead at 2 frames or more,
+  Light is Full. SaiDaiOuJou's boss on a Steam Machine: 7.8 ms a frame with it off, 6.0 Light, 5.45 Full; with
+  run-ahead 2 and the stick moving, half as many frames late. The game plays exactly the same with any.
 - **The Linux download is built with clang**, and can be built with a profile made on a Steam Machine or Deck
   (tools/release/linux.sh, run-pgo-linux.sh, docs/RELEASING.md): the same frames and hashes as gcc's build (three
   games of the three boards compared frame by frame), SaiDaiOuJou's busiest scene 4.4 ms a frame with gcc, 4.2 with
