@@ -34,7 +34,6 @@
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
-#include <memory>
 #include <vector>
 
 #define SPELUNK_TIMING_HOT __attribute__((always_inline)) inline
@@ -746,8 +745,8 @@ struct Sh3Paths {
     static uint32_t Block(uint32_t a) {
         return (a & (kRamBytes - 1)) >> kBlockShift;
     }
-    // A memo is one cache line, the two of a set side by side: a plan of up to kHotSteps fetches and ops is in it,
-    // a longer one in the cold array at the same place
+    // A memo is one cache line, the two of a set side by side: a plan of up to kHotSteps fetches and ops is in it;
+    // a longer one is in the cold pool, at the place its fetch[0] names
     struct alignas(64) Memo {
         uint32_t from, to, stamp;
         uint32_t generation; // (kept while it is the table's: Forget starts a new one)
@@ -761,6 +760,9 @@ struct Sh3Paths {
         Sh3Timing::Plan::Op op[kHotSteps];
     };
     static_assert(sizeof(Memo) == 64, "a memo is one cache line");
+    static bool Long(uint32_t fetches, uint32_t ops) {
+        return fetches > kHotSteps || ops > kHotSteps;
+    }
     struct Cold {
         uint32_t fetch[kMemoSteps];
         Sh3Timing::Plan::Op op[2 * kMemoSteps];
@@ -796,8 +798,10 @@ struct Sh3Paths {
     }
     uint32_t bits = Bits();
     std::vector<Memo> memos = std::vector<Memo>(size_t{1} << bits);
-    // (not cleared: a place's cold plan is read only after Keep wrote it, so the pages of those never used stay unmapped)
-    std::unique_ptr<Cold[]> cold = std::unique_ptr<Cold[]>(new Cold[size_t{1} << bits]);
+    // (the long plans: as many as memos hold one now, each memo with a long plan keeping its own; one given up goes to
+    // `spare` for the next)
+    std::vector<Cold> cold;
+    std::vector<uint32_t> spare;
     std::vector<uint32_t> written = std::vector<uint32_t>(kRamBytes >> kBlockShift); // (each block's last write)
     uint32_t clock = 1;
     uint32_t generation = 1; // (the kept paths': a memo of another is not kept)
@@ -873,10 +877,10 @@ struct Sh3Paths {
     }
     // (a found memo's plan)
     const uint32_t *Fetches(const Memo *m) const {
-        return m->fetches <= kHotSteps ? m->fetch : cold[static_cast<size_t>(m - memos.data())].fetch;
+        return Long(m->fetches, m->ops) ? cold[m->fetch[0]].fetch : m->fetch;
     }
     const Sh3Timing::Plan::Op *Ops(const Memo *m) const {
-        return m->ops <= kHotSteps ? m->op : cold[static_cast<size_t>(m - memos.data())].op;
+        return Long(m->fetches, m->ops) ? cold[m->fetch[0]].op : m->op;
     }
     void Keep(uint32_t from, uint32_t to, const Sh3Timing::PathInfo &info, const Sh3Timing::Plan &plan, const Watching &watching) {
         if (info.count > kMemoSteps || watching.tooMany || plan.tail > 0xFFFF || plan.span > 0xFFFF) {
@@ -889,6 +893,21 @@ struct Sh3Paths {
                                                                        : 1u - pair[0].recent;
         pair[0].recent = static_cast<uint8_t>(way);
         Memo &m = pair[way];
+        // (its cold plan, if it had one, kept for a long plan or given up: a memo's fields stay as they were until
+        // Keep writes them, a Forget only changing the table's generation)
+        const bool wasLong = Long(m.fetches, m.ops), isLong = Long(plan.fetches, plan.ops);
+        uint32_t slot = wasLong ? m.fetch[0] : 0;
+        if (isLong && !wasLong) {
+            if (!spare.empty()) {
+                slot = spare.back();
+                spare.pop_back();
+            } else {
+                slot = static_cast<uint32_t>(cold.size());
+                cold.emplace_back();
+            }
+        } else if (wasLong && !isLong) {
+            spare.push_back(slot);
+        }
         m.generation = generation;
         m.from = from;
         m.to = to;
@@ -900,9 +919,14 @@ struct Sh3Paths {
         m.ops = static_cast<uint8_t>(plan.ops);
         m.tail = static_cast<uint16_t>(plan.tail);
         m.span = static_cast<uint16_t>(plan.span);
-        Cold &c = cold[2 * set + way];
-        std::memcpy(plan.fetches <= kHotSteps ? m.fetch : c.fetch, plan.fetch, plan.fetches * sizeof plan.fetch[0]);
-        std::memcpy(plan.ops <= kHotSteps ? m.op : c.op, plan.op, plan.ops * sizeof plan.op[0]);
+        if (isLong) {
+            m.fetch[0] = slot;
+            std::memcpy(cold[slot].fetch, plan.fetch, plan.fetches * sizeof plan.fetch[0]);
+            std::memcpy(cold[slot].op, plan.op, plan.ops * sizeof plan.op[0]);
+        } else {
+            std::memcpy(m.fetch, plan.fetch, plan.fetches * sizeof plan.fetch[0]);
+            std::memcpy(m.op, plan.op, plan.ops * sizeof plan.op[0]);
+        }
     }
 };
 
