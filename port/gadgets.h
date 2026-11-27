@@ -280,6 +280,11 @@ private:
         using Kind = spelunk::Gadget::Kind;
         int body = 0;
         const int bx = x + kPad, by = y + kHeader + kPad, bw = w - 2 * kPad;
+        // (a meter's or a graph's one line, cut to the panel)
+        auto fit = [&](std::string s) {
+            s.resize(std::min(s.size(), static_cast<size_t>(bw / recomp::text::kCharWidth)));
+            return s;
+        };
         const std::vector<std::string> lines = item.kind == Kind::Words ? Wrapped(item.words, static_cast<size_t>(bw / recomp::text::kCharWidth))
                                                                         : std::vector<std::string>();
         switch (item.kind) {
@@ -307,7 +312,7 @@ private:
             break;
         }
         case Kind::Meter: {
-            Words(bx, by, item.words, 0xFFFFFFFFu);
+            Words(bx, by, fit(item.words), 0xFFFFFFFFu);
             const int my = by + recomp::text::kLineHeight + 1;
             Box(bx, my, bw, 7, 0xFF402820u);
             Box(bx + 1, my + 1, (bw - 2) * item.value / item.most, 5, item.colour);
@@ -334,7 +339,7 @@ private:
             char pct[16];
             snprintf(pct, sizeof pct, "  %d%%", item.value * 100 / item.most);
             // (the share of its most, unless the words give one)
-            Words(bx, by + kGraphHeight + 2, item.words.find('%') == std::string::npos ? item.words + pct : item.words, 0xFFFFFFFFu);
+            Words(bx, by + kGraphHeight + 2, fit(item.words.find('%') == std::string::npos ? item.words + pct : item.words), 0xFFFFFFFFu);
             break;
         }
         default: {

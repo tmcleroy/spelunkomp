@@ -169,9 +169,9 @@ const Game &ThisGame() {
              0xFF40FFFFu},
             {"BEES", Kind::Meter,
              [](const Board &board) {
-                 return Playing(board) ? std::to_string(Word(board, ddonpach::kBees)) + " THIS STAGE  SETS OF " +
-                                             std::to_string(ddonpach::kBeeSetSize) + ": " + std::to_string(Word(board, ddonpach::kBeeSets)) +
-                                             " / " + std::to_string(ddonpach::kLoopBeeSets)
+                 return Playing(board) ? std::to_string(Word(board, ddonpach::kBees)) + " / " + std::to_string(ddonpach::kBeeSetSize) +
+                                             "  SETS " + std::to_string(Word(board, ddonpach::kBeeSets)) + " / " +
+                                             std::to_string(ddonpach::kLoopBeeSets)
                                        : std::string();
              },
              [](const Board &board, int &value, int &most) {
