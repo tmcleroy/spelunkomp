@@ -333,7 +333,8 @@ private:
             }
             char pct[16];
             snprintf(pct, sizeof pct, "  %d%%", item.value * 100 / item.most);
-            Words(bx, by + kGraphHeight + 2, item.words + pct, 0xFFFFFFFFu);
+            // (the share of its most, unless the words give one)
+            Words(bx, by + kGraphHeight + 2, item.words.find('%') == std::string::npos ? item.words + pct : item.words, 0xFFFFFFFFu);
             break;
         }
         default: {
