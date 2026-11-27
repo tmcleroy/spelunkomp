@@ -2603,6 +2603,9 @@ int main(int argc, char **argv) {
     // frame, not run-ahead's frames and one more. The same frames, picture and sound: they are what the next frame
     // would run with those controls, and are run again there as ever if the controls have changed once more
     const bool aheadEarlyOn = !getenv("SPELUNK_NO_AHEAD_EARLY");
+    // (SPELUNK_AHEAD_EARLY_LATE=1, a check's: the controls looked at only in the wait's last millisecond, and the frames
+    // run again there whatever the time: nearly every early run goes past the frame's time)
+    const bool aheadEarlyLateTest = getenv("SPELUNK_AHEAD_EARLY_LATE") != nullptr;
     uint64_t aheadEarly = 0, aheadEarlyLate = 0;
     uint64_t aheadPastNs = 0; // (an early run's time past the frame's: the frame's own time, as the port's)
     auto waitAhead = [&](std::chrono::steady_clock::time_point until) {
@@ -2613,14 +2616,15 @@ int main(int argc, char **argv) {
             if (now >= until) {
                 return;
             }
-            if (aheadEarlyOn && !aheadKept.frames.empty() && static_cast<int>(aheadKept.frames.size()) == ahead) {
+            if (aheadEarlyOn && !aheadKept.frames.empty() && static_cast<int>(aheadKept.frames.size()) == ahead &&
+                (!aheadEarlyLateTest || now + std::chrono::milliseconds(1) >= until)) {
                 scriptAt(frameCount);
                 uint32_t held[3] = {};
                 if (controls.Sample(held) && aheadKeepable() && !std::equal(held, held + 3, aheadKept.frames.front().held)) {
                     // (time for them all, or for all but one: one frame's work past the frame's time still saves the
                     // rest of what the frame would run, and the frame waits for it: counted in its time)
                     const auto need = std::chrono::nanoseconds(static_cast<int64_t>(aheadFrameNs * (ahead * 1.25 - 1)));
-                    if (aheadFrameNs > 0 && now + need < until) {
+                    if (aheadFrameNs > 0 && (now + need < until || aheadEarlyLateTest)) {
                         hw.NetBack(aheadKept.frames.front().place);
                         for (const AheadKept::Frame &f : aheadKept.frames) {
                             hw.NetDrop(f.place);
