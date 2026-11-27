@@ -455,8 +455,8 @@ void Shading::SetOverlay(const uint32_t *pixels, int width, int height) {
     Texture(m_overlay, m_overlayWidth, m_overlayHeight, pixels, width, height, GL_NEAREST);
 }
 
-void Shading::SetWindowLayer(const uint32_t *pixels, int width, int height) {
-    Texture(m_layer, m_layerWidth, m_layerHeight, pixels, width, height, GL_LINEAR);
+void Shading::SetWindowLayer(const uint32_t *pixels, int width, int height, bool sharp) {
+    Texture(m_layer, m_layerWidth, m_layerHeight, pixels, width, height, sharp ? GL_NEAREST : GL_LINEAR);
 }
 
 void Shading::Texture(uint32_t &texture, int &haveWidth, int &haveHeight, const uint32_t *pixels, int width, int height, int filter) {
@@ -488,6 +488,9 @@ void Shading::Texture(uint32_t &texture, int &haveWidth, int &haveHeight, const 
         haveHeight = height;
     }
     gl.BindTexture(GL_TEXTURE_2D, texture);
+    // (each time: one texture may be given pictures wanting either, the window layer's touch controls and gadgets)
+    gl.TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, filter);
+    gl.TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, filter);
     gl.PixelStorei(GL_UNPACK_ALIGNMENT, 4);
     gl.PixelStorei(GL_UNPACK_ROW_LENGTH, width);
     gl.TexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, width, height, GL_RGBA, GL_UNSIGNED_BYTE, pixels);

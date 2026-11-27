@@ -48,7 +48,7 @@ public:
     void SetOverlay(const uint32_t *pixels, int width, int height);
     // What is laid over the whole window after that (the touch controls: port/touch.h), stretched to it smoothly; the
     // same kind of pixels. None (nullptr): nothing
-    void SetWindowLayer(const uint32_t *pixels, int width, int height);
+    void SetWindowLayer(const uint32_t *pixels, int width, int height, bool sharp = false);
     // Each picture shown waits for the screen's refresh (on: full screen at an arcade monitor's mode, paced by the
     // screen, recomp-common/arcade_screen.h), or (off, as Open leaves it) is shown the moment it is done
     void SetVsync(bool on);

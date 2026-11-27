@@ -32,8 +32,9 @@ public:
     // alpha as how much of it shows), over the same rectangle; none: no picture
     void SetOverlay(const uint32_t *pixels, int width, int height);
     // A picture laid over the whole window by each present after this (the touch controls: port/touch.h), stretched
-    // to it, over the picture and its overlay; as SetOverlay's pixels. None: none
-    void SetWindowLayer(const uint32_t *pixels, int width, int height);
+    // to it, over the picture and its overlay; as SetOverlay's pixels. None: none. `sharp`: its pixels drawn as
+    // squares (the gadgets, port/gadgets.h: a whole fraction of the window's size), not smoothed
+    void SetWindowLayer(const uint32_t *pixels, int width, int height, bool sharp = false);
     // Shows a picture made on the CPU (32 bits a pixel, red in the low byte) instead of the screen
     void PresentPicture(const uint32_t *pixels, int width, int height, const SDL_FRect &to);
     // The window drawn into from now on, the one before let go of; none: no window (presents show nothing). The device
@@ -139,7 +140,7 @@ private:
     void EndFrame(SDL_GPUCommandBuffer *cmd);
     SDL_GPUTexture *m_picture = nullptr, *m_overlay = nullptr, *m_layer = nullptr;
     int m_pictureW = 0, m_pictureH = 0, m_overlayW = 0, m_overlayH = 0, m_layerW = 0, m_layerH = 0;
-    bool m_overlayOn = false, m_layerOn = false;
+    bool m_overlayOn = false, m_layerOn = false, m_layerSharp = false;
     SDL_GPUSampler *m_linear = nullptr; // (the window's layer, stretched smoothly)
     // A texture of these pixels, made again at another size, uploaded
     void Upload(SDL_GPUTexture *&texture, int &haveW, int &haveH, const uint32_t *pixels, int width, int height);

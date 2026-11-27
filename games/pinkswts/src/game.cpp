@@ -4,7 +4,10 @@
 #include "../../../runtime/shmup.h"
 #include "pinkswts.h"
 
+#include <algorithm>
+#include <cstdio>
 #include <iterator>
+#include <string>
 
 namespace spelunk {
 
@@ -112,6 +115,67 @@ namespace {
         SetLong(board, kScript, kFirstStage + stage * kBeginStageSize);
         return true;
     }
+    unsigned Word16(const Board &board, uint32_t address) {
+        const uint8_t *p = &board.ram[address & (SH3::kRamSize - 1)];
+        return static_cast<unsigned>(p[0]) << 8 | p[1];
+    }
+    unsigned Byte8(const Board &board, uint32_t address) {
+        return board.ram[address & (SH3::kRamSize - 1)];
+    }
+    bool Playing(const Board &board) {
+        return (Long(board, pinkswts::kPlayer1) >> 31) != 0;
+    }
+    // A medal's worth from the game's byte
+    std::string Medal(unsigned n) {
+        return n <= 18 ? std::to_string(n < 9 ? (n + 1) * 100 : (n - 8) * 1000) : std::string();
+    }
+    // The boss's life and phase now, as the layout reads them: a boss's record (the kinds and parts of its table) in use
+    // and hittable; in two bosses' phases another part's life is the one that counts (the layout's overrides)
+    bool BossLife(const Board &board, int &life, int &phase) {
+        using namespace pinkswts;
+        struct Boss {
+            uint32_t kind, part;
+            int overridePhase = -1;
+            uint32_t overridePart = 0;
+        };
+        static const Boss kBosses[] = {
+            {61, 0}, {57, 1}, {64, 0}, {69, 0}, {44, 0}, {63, 0}, {39, 0, 3, 8}, {62, 0}, {37, 0}, {42, 0},
+            {65, 0}, {84, 0}, {41, 1}, {72, 0}, {66, 0}, {2, 0, 1, 1}, {67, 0}, {36, 0}, {36, 1}, {36, 2}, {36, 4},
+        };
+        life = -1;
+        phase = -1;
+        int overridePhase = -1;
+        uint32_t overridePart = 0, overrideKind = 0;
+        for (int i = 0; i < kEnemyCount; i++) {
+            const uint32_t at = kEnemies + static_cast<uint32_t>(i * kEnemySize);
+            const uint32_t flags = Long(board, at);
+            const int l = static_cast<int>(Word16(board, at + kEnemyLife));
+            if (!(flags & 0x80000000u) || (flags & 0x4000u) || l <= 0) {
+                continue;
+            }
+            const uint32_t kind = Long(board, at + kEnemyKind), part = Long(board, at + kEnemyPart);
+            for (const Boss &b : kBosses) {
+                if (b.kind == kind && b.part == part) {
+                    life = l;
+                    phase = static_cast<int>(Byte8(board, at + kEnemyPhase));
+                    if (b.overridePhase == phase) {
+                        overridePhase = phase;
+                        overridePart = b.overridePart;
+                        overrideKind = kind;
+                    }
+                }
+            }
+        }
+        if (overridePhase >= 0) {
+            for (int i = 0; i < kEnemyCount; i++) {
+                const uint32_t at = kEnemies + static_cast<uint32_t>(i * kEnemySize);
+                if ((Long(board, at) & 0x80000000u) && Long(board, at + kEnemyKind) == overrideKind && Long(board, at + kEnemyPart) == overridePart) {
+                    life = static_cast<int>(Word16(board, at + kEnemyLife));
+                }
+            }
+        }
+        return life > 0;
+    }
 } // namespace
 
 const Game &ThisGame() {
@@ -131,7 +195,49 @@ const Game &ThisGame() {
         f.hitBoxes = HitBoxes;
         f.hitTest = pinkswts::kHitTest;
         f.hitKinds |= 1u << HitBox::Ground | 1u << HitBox::Shot;
-        return shmup::MakeGame(pinkswts::kCredits, f);
+        Game g = shmup::MakeGame(pinkswts::kCredits, f);
+        // (the M2-style gadgets, port/gadgets.h: what Olifante's MAME layout for the game shows)
+        using Kind = Gadget::Kind;
+        g.gadgets = {
+            {"RANK", Kind::Graph,
+             [](const Board &board) {
+                 char words[24];
+                 snprintf(words, sizeof words, "%.2f%%", (1.0 - Long(board, pinkswts::kRank) / 16777216.0) * 100);
+                 return Playing(board) ? std::string(words) : std::string();
+             },
+             [](const Board &board, int &value, int &most) {
+                 most = 1 << 16;
+                 value = std::clamp(static_cast<int>((0x1000000 - static_cast<long long>(Long(board, pinkswts::kRank))) >> 8), 0, most);
+                 return Playing(board);
+             },
+             0xFF4070FFu},
+            {"ZAN", Kind::Words, [](const Board &board) {
+                 return Playing(board) ? std::to_string(static_cast<int>(Word16(board, pinkswts::kZan)) - static_cast<int>(Word16(board, pinkswts::kZanLess)))
+                                       : std::string();
+             }},
+            {"NEXT DROPS", Kind::Words, [](const Board &board) {
+                 if (!Playing(board)) {
+                     return std::string();
+                 }
+                 static const char *const kRound[8] = {"BULLET", "ROSE", "DOUBLE", "ROSE", "TRIPLE", "ROSE", "OPTION", "ROSE"};
+                 const unsigned n = Byte8(board, pinkswts::kNextDrop);
+                 std::string out;
+                 for (unsigned i = 0; i < 4; i++) {
+                     out += (i ? "\n" : ">") + std::string(i ? " " : "") + kRound[(n + i) % 8];
+                 }
+                 return out + "\nDROPPED\n SHOTS " + std::to_string(Byte8(board, pinkswts::kShotsDropped)) + "  OPTIONS " +
+                        std::to_string(Byte8(board, pinkswts::kOptionsDropped));
+             }},
+            {"NEXT MEDAL", Kind::Words,
+             [](const Board &board) { return Playing(board) ? Medal(Byte8(board, pinkswts::kNextMedal)) : std::string(); }},
+            {"BOSS", Kind::Words, [](const Board &board) {
+                 int life = 0, phase = 0;
+                 return Playing(board) && BossLife(board, life, phase) ? "LIFE " + std::to_string(life) + "  PHASE " + std::to_string(phase)
+                                                                      : std::string();
+             }},
+        };
+        g.score = [](const Board &board) -> long long { return Playing(board) ? static_cast<long long>(Long(board, pinkswts::kScore1)) : -1; };
+        return g;
     }();
     return game;
 }

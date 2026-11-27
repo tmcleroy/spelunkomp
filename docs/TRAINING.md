@@ -84,6 +84,7 @@ runtime/shmup.h makes the features from them:
 | DoDonPachi SaiDaiOuJou | all five (a later stage reached through stage 1's launch and the game's own way on to the next stage, 0x0C1F27F0 called at the collision pass's entry, with stage 1's tally; tried at stage 3 and the bosses of stages 1 and 2) |
 | Ibara, Ibara Kuro Black Label | all five (a stage begun through the game's own script, its pointer sent past the stages before it; out of harm holds the safe count at 59: above 60 it also kept a lost ship from coming back) |
 | Pink Sweets | start at stage (seven stages), straight to the boss, out of harm, ships that never run out, and the Rose Cracker always charged in place of bombs, which the game has none of (its gauge, the player's record +0x286, held full at 128: every shot tap releases one) |
+| Mushihimesama | COUNTER (Maniac and Ultra: the counter's value, a graph, its bar cut off at 500), SCORE ITEMS (the 100, 200 and 500 items taken), NEXT EXTEND; score by stage. No rank and no power level were found |
 | Muchi Muchi Pork! | all five. The bombs are a byte at 0x0C510D3C, kept at 2; the bomb is button 3 (button 2 is the lard attack). Also the lard meter kept full (a word at 0x0C510D36, 104 full) |
 | Deathsmiles, Deathsmiles MegaBlack Label | all five. A stage is a place on the map, begun by the new-game routine's count of stages played (0x0C06F040 / 0x0C1EFE60, r5); "Off" is the map. The life is a word, 130 a ship (kept at two ships' worth); out of harm holds the safe count in the player's record (+0xAC / +0xD8) at 64. The castles' boss tunes are not known, so the trip to the boss times out there |
 | Akai Katana | all five (player 1's record at 0x0C7E8628: ships 32 bits, 1,600 a ship). A later stage (2-6) is begun through the game's own way on to a stage, 0x0C1F48F0, given the stage chosen where a new game calls it from 0x0C275DE2; the game plays a stage's end first. Stage 5's boss tune is not known, so that trip times out. Also the energy kept full (record +0x14, 32 bits), which Phantom form spends (button 4, held): it shares a bar of 8,000 with the life, and is held at what the life's ceiling leaves of it, as the game's own routine that adds energy (0x0C1F9470) holds it: 3,200 with three ships, more as ships are lost |
@@ -229,6 +230,32 @@ reads each one's value now ("" hides it).
 | Game | Readouts |
 | --- | --- |
 | Muchi Muchi Pork! | LARD: the lard meter as a number, out of 104 (the game draws only its bar) |
+
+## M2-style gadgets (runtime/game.h: Game::gadgets; port/gadgets.h)
+
+The feature "M2-style gadgets" (Training mode page, every game): framed panels in the space a stood-up picture leaves
+at its sides in a wide window, as M2's ports (Battle Garegga Rev.2016, ESP Ra.De. Psi, Ketsui Deathtiny) have them.
+Drawn on a picture of their own a whole fraction of the window's size (about 360 lines, so each of its dots is a few
+of the window's pixels, sharp), laid over the window as the touch controls' layer is (those, while they show, come
+first: they want the same sides). Read from the board after each frame shown, never written to it: the game runs the
+same frames with them on, online too (they are each player's own).
+
+Every game has the toolkit's: CONTROLS (the stick and buttons held) and, where its facts give player 1's score and the
+stage (Game::score, Game::stage), SCORE BY STAGE (what each stage made, the stage now marked, and the total; begun
+again when the score goes down, a new game). A game with scoring readouts and no gadgets of its own shows them as one
+panel, COUNTERS. A game's own are Words (lines), a Meter (a bar, with words over it) or a Graph (the value kept every
+8 frames over the last half minute, the rank graph). A side too narrow for a panel (84 of its dots) gives its gadgets
+to the other; none are drawn when neither has room (the picture across the window: As the cabinet, or a tall window).
+
+| Game | Its own gadgets |
+| --- | --- |
+| Dai-Ou-Jou Black Label | RANK (the game rank, a graph), BULLET SPEED (with the hyper rank), CHAIN (the gauge, hits, best), HYPER (the gauge or the time left, items held), BEES, TO THE 2ND LOOP (the game's own test); score by stage |
+| Dai-Ou-Jou | The same as Black Label's, at the white label's own places (its bullet speed 10 at most); its readouts too |
+| DoDonPachi | RANK (0 to 63, the byte the enemies' fire reads, a graph), CHAIN (the timer, hits, best), BEES (this stage's, the sets of 13), TO THE 2ND LOOP (the game's own test: no continue, and misses, the best chain for the ship, the score or the bees); score by stage, 1-1 to 2-7 |
+| Ketsui | CHIPS (the stock and the total, the one counted now first), LOOP; score by stage. No rank was found (the enemies' patterns are by stage, loop and difficulty), nor the second loop's test |
+| Muchi Muchi Pork! | RANK (a graph), LARD, NEXT MEDAL, BOSS (the life of the part that counts, and the phase). From wnka's MAME layout, its places checked here |
+| Pink Sweets | RANK (a graph), ZAN, NEXT DROPS (the round of eight, and the shot and option power-ups dropped), NEXT MEDAL, BOSS (life and phase). From Olifante's MAME layout, its places checked here |
+| Ibara | RANK (a graph), NEXT DROPS (the round of 25), NEXT MEDAL. From the MAME layout linked from epozzobon.it/re (its places for this set's later program), checked here |
 
 ## Not yet
 

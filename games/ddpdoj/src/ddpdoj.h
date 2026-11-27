@@ -96,6 +96,71 @@ constexpr uint32_t kLaser1 = 0x811E66, kLaser2 = 0x811E86;
 constexpr int kShipLaserOn = 0x3F;
 constexpr int kLaserLength = 6, kLaserDown = 8, kLaserUp = 0xA, kLaserEnd = 0x10;
 
+// What the game is doing (a word, found 2026-11-27 by comparing RAM dumps of a headless run: 0 through the boot, the
+// logos and the title, 9 as a ship is chosen, 0x0A while a stage is played; this word and no other was 0, 9 and 0x0A
+// at those times; Black Label's is 0x8C higher). The attract show's demonstration plays as a game does (0x0A), with
+// its inputs read from a table whose place is kept here (a long, set at 15B3EC: not 0 only then; 0x13 and 0x9FB8 in a
+// dump of the demonstration, 0 in a game)
+constexpr uint32_t kMode = 0x80E33E;
+constexpr int kModePlayed = 0x0A;
+constexpr uint32_t kDemoInputs = 0x812E08;
+
+// --- Player 1's scoring (found 2026-11-27 from headless runs' RAM dumps, every 4 frames over 400 frames of play; the
+// same code as Black Label's (ddpdojblk.h, found by the same shapes: the rank is worked out at 15F43A, 2608D2 there),
+// whose places are here 0x25C lower from 81B000 on) ---
+// The chain: the hits now, in BCD (a word: 0x24 for 24 hits; counted up a kill at a time, the picture's hit counter
+// agreed), and its gauge, a word counted down one a frame from 0x38 (a kill refills it, 0x37 seen after one; the chain
+// broken at 0)
+constexpr uint32_t kChain = 0x81B37E;
+constexpr uint32_t kChainGauge = 0x81B364;
+constexpr int kChainGaugeFull = 0x38;
+// The most hits in one chain this game (BCD, a word: it followed the chain's count up each time that passed it)
+constexpr uint32_t kChainBest = 0x81B3D6;
+// Player 1's score (a long word in BCD, in tens: 0x00401030 for 4,010,300; found 2026-11-27: the picture's score
+// (4,010,300 in the shot at frame 3900) against the long's value, and both counting up together a kill at a time)
+constexpr uint32_t kScore1 = 0x81B1E4;
+// The hyper gauge (a word): filled by kills, chains and bees (it rose by a kill's own steps in the dumps), a hyper item
+// let go when it reaches kHyperFull (the code at 185930 sets it to 0 at that value; 1859CA holds it there)
+constexpr uint32_t kHyperGauge = 0x81B3EE;
+constexpr int kHyperFull = 0x95F;
+// The hyper items held (a word, up to 5; its low byte the item count: poked to 3, the bomb button used all three, the
+// level of the hyper that began being 3, 183EC4)
+constexpr uint32_t kHyperStock = 0x81B401;
+// The hyper rank (a word): raised by each hyper's level as it begins (183ED0; poked stock 3 made it 3), and, as in
+// Black Label (24A006 there), cut to a quarter at a ship lost (the loss's routine, 1492F8; read in the code, not
+// watched). It speeds the enemies' bullets
+constexpr uint32_t kHyperRank = 0x81B3EA;
+// What the ranks make of the enemies' fire (found 2026-11-27 in the code that works them out each frame, 15F43A and
+// 151E78, and watched through a hyper by RAM dumps: the game rank went 58 to 106 (3 x 16 more) as the hyper began and
+// back as it ends): the game rank (a word: the stage's own start (a table's byte for the difficulty) and one more each
+// 256 frames played, and while a hyper is on the hyper rank 16 times over; 240 at most (255 in a hyper), set outright
+// in the second loop). The bullets' speed (a word, 151E78): from a table by the higher of the players' hyper ranks (a
+// quarter of it while no hyper is on), more at some bosses; 10 at most (unlike Black Label's 15: the code's clamp at
+// 151EDE). It went 0 to 2 as the hyper began
+constexpr uint32_t kGameRank = 0x813002, kBulletSpeed = 0x8128C4;
+// A byte that is 1 while a hyper is on (the low byte of the word at 81B3FC, which is 1 from the bomb button's press
+// with items held until the hyper ends, 183F8C), and the time it has left (a word, from kHyperFull down by 2 a frame
+// while it lasts, 183F58; the item pickup, 15232C, sets it to kHyperFull. A hyper begun without it is over at once)
+constexpr uint32_t kHyperOn = 0x81B3FD;
+// The level of the hyper on now (the low byte of the word at 81B3F8: the items used for it; 0 again as it ends)
+constexpr uint32_t kHyperLevel = 0x81B3F9;
+constexpr uint32_t kHyperLeft = 0x81B3E6;
+
+// The bees taken in this stage (a word, seen counting 1 to 5 over three long runs of made-up play and back to 0 at
+// the next stage's start; the bee's routine, 17E48C, counts it up and gives the tenth its bonus), and the stages whose
+// ten were all taken, four for each (a word: 17E4A4 added 4 to it at each tenth bee, seen with the count poked to 9;
+// 17E1AC clears it, read in the code, as a game or stage begins)
+constexpr uint32_t kBees = 0x817D24;
+constexpr uint32_t kBeeStages = 0x817D26;
+// What the game asks of the first loop to go on to the second (its own test, 18E4FE on, read after the last stage; the same
+// terms as Black Label's, 290232 there): player 1's ships lost (a word: +1 for each ship,
+// seen 1 and 2 at the ships' losses; 2 at most for the term), bombs used (a word: +1 at each bomb, 148C3C; 3 at
+// most) or 12 in kBeeStages (three stages' bees), and none of it if the game was continued (a word, +1 at each continue,
+// 18558A, seen set by a continue in a long run of made-up play), nor in a two-player game (the word at 812FF4 has bit 0
+// for player 1's ship set up and bit 1 for player 2's: 3 when both are)
+constexpr uint32_t kShipsLost = 0x8128AC, kBombsUsed = 0x8128B4, kContinued = 0x81B23E;
+constexpr uint32_t kPlayers = 0x812FF4;
+
 // A word negative while player 1's ship is flown (its stage is set before the ship is chosen: Begin at the stage
 // presses the shot on until it is)
 constexpr uint32_t kShipFlown = 0x81035A;

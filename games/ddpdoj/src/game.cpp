@@ -5,6 +5,7 @@
 #include "ddpdoj.h"
 
 #include <algorithm>
+#include <string>
 
 namespace spelunk {
 
@@ -12,6 +13,23 @@ namespace {
     int Word(const Board &board, uint32_t address) {
         const size_t mask = board.ram.size() - 1;
         return (board.ram[address & mask] << 8) | board.ram[(address + 1) & mask];
+    }
+    // A byte of work RAM, and a word kept in BCD (the game's counters as it shows them) as a number
+    int Byte(const Board &board, uint32_t address) {
+        return board.ram[address & (board.ram.size() - 1)];
+    }
+    int Bcd(int bcd) {
+        int n = 0, scale = 1;
+        for (; bcd; bcd >>= 4, scale *= 10) {
+            n += (bcd & 15) * scale;
+        }
+        return n;
+    }
+    // While a player's game is played (not the attract show's demonstration, nor the title or the logos after one,
+    // whose memory still holds its last game's): the readouts and the gadgets show nothing otherwise
+    bool Playing(const Board &board) {
+        using namespace ddpdoj;
+        return Word(board, kMode) == kModePlayed && !Word(board, kDemoInputs) && !Word(board, kDemoInputs + 2);
     }
     // The boxes the game's hit test (1440A2) uses, read as it reads them
     void HitBoxes(const Board &board, std::vector<HitBox> &out) {
@@ -130,7 +148,142 @@ const Game &ThisGame() {
         f.bossWord = ddpdoj::kBossOn;
         f.hitBoxes = HitBoxes;
         f.hitKinds |= 1u << HitBox::Ground | 1u << HitBox::Shot;
-        return shmup::MakeGame(ddpdoj::kCredits, f);
+        Game g = shmup::MakeGame(ddpdoj::kCredits, f);
+        // (the scoring readouts: what the game keeps and does not show)
+        using namespace ddpdoj;
+        g.readouts = {
+            // (the game shows the chain's hits, the hyper gauge as its bar and the hyper items held itself: the most hits
+            // in a chain and the gauge as a number it does not)
+            {"BEST ", [](const Board &board) {
+                 return Playing(board) ? std::to_string(Bcd(Word(board, kChainBest))) : std::string();
+             }},
+            // (one line: the gauge, or while a hyper is on its level and the time it has left; the items held)
+            {"HYPER", [](const Board &board) {
+                 if (!Playing(board)) {
+                     return std::string();
+                 }
+                 if (Byte(board, kHyperOn)) {
+                     return "ON LV" + std::to_string(Byte(board, kHyperLevel)) + " " +
+                            std::to_string(std::min(Word(board, kHyperLeft), kHyperFull) * 100 / kHyperFull) + "%";
+                 }
+                 return std::to_string(std::min(Word(board, kHyperGauge), kHyperFull) * 100 / kHyperFull) + "% x" +
+                        std::to_string(Byte(board, kHyperStock));
+             }},
+            // (the ranks and what they make of the enemies' fire: the bullets' speed, the game rank, the hyper rank)
+            {"RANK ", [](const Board &board) {
+                 return Playing(board) ? "SPEED " + std::to_string(Word(board, kBulletSpeed)) + " INTERVAL " +
+                                             std::to_string(Word(board, kGameRank)) + " HYPER " +
+                                             std::to_string(Word(board, kHyperRank))
+                                       : std::string();
+             }},
+            {"BEES ", [](const Board &board) {
+                 return Playing(board) ? std::to_string(Word(board, kBees)) + "/10" : std::string();
+             }},
+            // (the second loop's terms as the game tests them at the first's end, while the first is played)
+            {"LOOP2", [](const Board &board) {
+                 if (!Playing(board) || Word(board, kStage) >= 5) {
+                     return std::string();
+                 }
+                 const int lost = Word(board, kShipsLost), bombs = Word(board, kBombsUsed), bees = Word(board, kBeeStages) / 4;
+                 const bool on = !Word(board, kContinued) && Word(board, kPlayers) != 3 && (lost <= 2 || bombs <= 3 || bees >= 3);
+                 return "MISS " + std::to_string(lost) + "/2 BOMB " + std::to_string(bombs) + "/3 BEE " +
+                        std::to_string(bees) + "/3 " + (on ? "OK" : "OUT");
+             }},
+        };
+        // (the M2-style gadgets, port/gadgets.h: the ranks over time and as meters, the chain's and the hyper's gauges,
+        // the second loop's terms; and the score, for the score by stage)
+        using Kind = Gadget::Kind;
+        g.gadgets = {
+            {"RANK", Kind::Graph,
+             [](const Board &board) { return Playing(board) ? "GAME RANK " + std::to_string(Word(board, kGameRank)) : std::string(); },
+             [](const Board &board, int &value, int &most) {
+                 value = Word(board, kGameRank);
+                 most = 255; // (240 at most, 255 in a hyper)
+                 return Playing(board);
+             },
+             0xFF4070FFu},
+            {"BULLET SPEED", Kind::Meter,
+             [](const Board &board) {
+                 return Playing(board) ? std::to_string(Word(board, kBulletSpeed)) + " / 10  HYPER RANK " + std::to_string(Word(board, kHyperRank))
+                                       : std::string();
+             },
+             [](const Board &board, int &value, int &most) {
+                 value = Word(board, kBulletSpeed);
+                 most = 10; // (the code's clamp)
+                 return Playing(board);
+             },
+             0xFF40B0FFu},
+            {"CHAIN", Kind::Meter,
+             [](const Board &board) {
+                 return Playing(board) ? std::to_string(Bcd(Word(board, kChain))) + " HITS  BEST " + std::to_string(Bcd(Word(board, kChainBest)))
+                                       : std::string();
+             },
+             [](const Board &board, int &value, int &most) {
+                 value = Word(board, kChainGauge);
+                 most = kChainGaugeFull;
+                 return Playing(board);
+             },
+             0xFF40FFFFu},
+            {"HYPER", Kind::Meter,
+             [](const Board &board) {
+                 if (!Playing(board)) {
+                     return std::string();
+                 }
+                 if (Byte(board, kHyperOn)) {
+                     return "ON  LEVEL " + std::to_string(Byte(board, kHyperLevel));
+                 }
+                 return std::to_string(std::min(Word(board, kHyperGauge), kHyperFull) * 100 / kHyperFull) + "%  HELD " +
+                        std::to_string(Byte(board, kHyperStock));
+             },
+             [](const Board &board, int &value, int &most) {
+                 value = std::min(Word(board, Byte(board, kHyperOn) ? kHyperLeft : kHyperGauge), kHyperFull);
+                 most = kHyperFull;
+                 return Playing(board);
+             },
+             0xFF60FF60u},
+            {"BEES", Kind::Meter,
+             [](const Board &board) {
+                 return Playing(board) ? std::to_string(Word(board, kBees)) + " / 10  ALL TEN: " + std::to_string(Word(board, kBeeStages) / 4)
+                                       : std::string();
+             },
+             [](const Board &board, int &value, int &most) {
+                 value = Word(board, kBees);
+                 most = 10;
+                 return Playing(board);
+             },
+             0xFF30D0F0u},
+            // (the second loop's terms as the game tests them at the first's end, while the first is played)
+            {"TO THE 2ND LOOP", Kind::Words, [](const Board &board) {
+                 if (!Playing(board) || Word(board, kStage) >= 5) {
+                     return std::string();
+                 }
+                 const int lost = Word(board, kShipsLost), bombs = Word(board, kBombsUsed), bees = Word(board, kBeeStages) / 4;
+                 const bool continued = Word(board, kContinued) != 0, two = Word(board, kPlayers) == 3;
+                 const bool on = !continued && !two && (lost <= 2 || bombs <= 3 || bees >= 3);
+                 auto mark = [](bool ok) { return ok ? "  OK" : ""; };
+                 return std::string("ONE OF:\n") + " MISSES " + std::to_string(lost) + " / 2" + mark(lost <= 2) + "\n BOMBS  " +
+                        std::to_string(bombs) + " / 3" + mark(bombs <= 3) + "\n BEES   " + std::to_string(bees) + " / 3" + mark(bees >= 3) +
+                        "\n" + (continued ? "CONTINUED: OUT" : two ? "TWO PLAYERS: OUT" : on ? "ON THE WAY" : "OUT");
+             }},
+        };
+        g.score = [](const Board &board) -> long long {
+            if (!Playing(board)) {
+                return -1;
+            }
+            // (BCD, in tens: the last digit shown is always 0)
+            const long long bcd = (static_cast<long long>(Word(board, kScore1)) << 16) | Word(board, kScore1 + 2);
+            long long n = 0, scale = 1;
+            for (long long b = bcd; b; b >>= 4, scale *= 10) {
+                n += (b & 15) * scale;
+            }
+            return n * 10;
+        };
+        g.stage = [](const Board &board) { return Playing(board) ? Word(board, kStage) : -1; };
+        g.readoutsWhat = "the most hits in a chain this game; the hyper gauge as a number (or, while a hyper is on, its "
+                         "level and the time it has left) and the hyper items held; the ranks (the bullets' speed, the "
+                         "game rank and the hyper rank); the bees taken in this stage; and the second loop's terms (ships "
+                         "lost, bombs used, stages with all ten bees) as the game tests them";
+        return g;
     }();
     return game;
 }

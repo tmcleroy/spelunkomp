@@ -108,4 +108,40 @@ constexpr int kShotRight = 0x10, kShotWidth = 0x12, kShotDown = 0x14, kShotHalfH
 // A word negative while player 1's ship is flown (its stage is set before the ship is chosen: Begin at the stage
 // presses the shot on until it is)
 constexpr uint32_t kShipFlown = 0x80FEA2;
+// --- What the gadgets (port/gadgets.h) read (all found 2026-11-27 by RAM dumps of real play, diffed over time, then the
+// code that writes each) ---
+// Player 1's score (a long word in plain binary, the score as shown, 1,085,430 on the picture at
+// one dump; found by the number on the picture searched for in a dump, then counted up with it over 5,000 frames and past
+// 30 million). It stands on a word's boundary, not a long word's, and a copy of it follows at +4 (what the picture
+// draws)
+constexpr uint32_t kScore1 = 0x81A63E;
+// Which loop is flown (a word: 0 the first loop, 1 the second; the stage word, kStage, begins again at 0 in it). It is
+// set to 0 as a game's state is cleared and counted up by the stage task as the fifth stage's end begins stage 0
+// again (0C9934; reached only from the end of stage 5: 0C98FA is never run at a new game, traced). Seen to go 0 to 1
+// when a game was flown through all five stages with no ship lost and no continue, and the tables that place the
+// enemies are chosen by it (0AE144). What decides whether the second loop is begun at all was not found: the stage
+// task asks a word, 81244E, at the fifth stage's end (1054DC: not 0 is the ending, 0 the next loop), which nothing in
+// the program's code writes but a clear, and which stayed 0 in a flown game and in games with ships lost
+constexpr uint32_t kLoop = 0x812446;
+// The chips, two words (the game's code adds a chip's value, 1 to 5, to both when one is taken: 0F5748 on, and the
+// pick-ups' routines at 0F5982, 0F5C16 ... each counting its own value's chips up in the words from kChipsByValue):
+//  - kChipStock (capped 999): the small number the picture shows below the big one. A kill (the routine at 0FD2FE,
+//    for the kills with bit 4 of the killed enemy's flags: the lock-on's) turns it into chips (a division by 30, 20 or
+//    10 by the ship, subtracted: 78 became 76 at a kill in the dumps) and a ship lost cuts it by a quarter (0F5868)
+//  - kChipTotal (capped 9999): the big number. It never fell in play except in a boss's fight, where the game counts
+//    it down a frame at a time (0BAF8A, from the boss's approach to its end) and kills use it in place of the first
+// Which of the two the game's pick-ups and kills use is told by bit 2 of the boss word (kBossOn's 0x0400: from the
+// boss's warning on, the total). Found by the picture ("189" over "61" matched the words 811512 and 811510 in the
+// dump of that frame, and the same pair in dumps every 100 frames)
+constexpr uint32_t kChipStock = 0x811510, kChipTotal = 0x811512;
+constexpr int kChipStockMost = 999, kChipTotalMost = 9999;
+// Chips taken, by value (five words, for values 1 to 5; player 2's from 0x817190): counted up by each pick-up's
+// routine (0F59D2). In the dumps only the first counted: it equalled the chips taken
+constexpr uint32_t kChipsByValue = 0x817186;
+// While a player's game is played: the stage task is the first of the task list (a record of 0x54 bytes from 80B0BC,
+// its first word 0x8000 or'd with its kind: 0x0A while a game is flown, the attract show's demonstration too, and
+// 0x08 at the title), the attract show's demonstration is told by 80110E (1 while it runs; set at 0C5ECA, cleared as a
+// game begins, 0C61CA), and the ships left (kShips' byte) is 0xFF between games, after the last ship
+constexpr uint32_t kTasks = 0x80B0BC, kDemo = 0x80110E;
+constexpr int kStageTask = 0x800A;
 } // namespace spelunk::ket

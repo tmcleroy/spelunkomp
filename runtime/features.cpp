@@ -3,6 +3,8 @@
 // The toolkit's own features, after the game's and before the game program's (game.h)
 #include "game.h"
 
+#include <cctype>
+
 #include "../recomp-common/menu_turn.h"
 #include "board_settings.h"
 
@@ -194,6 +196,18 @@ namespace {
         static std::vector<recomp::FeatureInfo> features;
         return features;
     }
+    // (the game's own gadgets' titles, for the feature's description: "rank, hyper")
+    std::string GadgetTitles() {
+        std::string out;
+        for (const Gadget &g : ThisGame().gadgets) {
+            std::string t = g.title;
+            for (char &c : t) {
+                c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+            }
+            out += (out.empty() ? "" : ", ") + t;
+        }
+        return out;
+    }
 } // namespace
 
 void AddProgramFeatures(std::vector<recomp::FeatureInfo> features) {
@@ -211,6 +225,17 @@ const std::vector<recomp::FeatureInfo> &AllFeatures() {
                                 (ThisGame().readoutsWhat ? ThisGame().readoutsWhat : "") + ".",
                             0, {"Off", "Left", "Right"}});
         }
+        // (every game's: the controls and, where the game's facts have its score, the score by stage; and the game's
+        // own, port/gadgets.h)
+        list.push_back({"gadgets", kTrainingPage, "M2-style gadgets",
+                        "Panels in the space beside the picture, as M2's ports of arcade shooting games have them: what "
+                        "the game keeps and does not show, read from its memory as it plays (its own: " +
+                            std::string(ThisGame().gadgets.empty() ? "none yet" : GadgetTitles()) +
+                            "), the controls held" + (ThisGame().score ? ", the score each stage made" : "") +
+                            (ThisGame().readouts.empty() || !ThisGame().gadgets.empty() ? "" : ", the scoring readouts") +
+                            ". None when the picture fills the window's width; never over the picture, and the game "
+                            "runs as it does without them.",
+                        0, {"Off", "On"}});
         // (the Board page's, from game.cfg, after the game's own; the Controls page's autofire after the toolkit's:
         // runtime/board_settings.h)
         const std::vector<recomp::FeatureInfo> board = BoardSettingFeatures(), autofire = AutofireFeatures();

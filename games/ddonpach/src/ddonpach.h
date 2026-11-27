@@ -58,6 +58,49 @@ constexpr uint32_t kBombStock = 0x102CB1; // what the bombs are filled to at a n
 // frame at a time; held up, nothing hits it)
 constexpr uint32_t kSafeFrames = 0x102CCA;
 
+// --- What the game keeps and does not show (found 2026-11-27 for the M2-style gadgets: runtime/game.h's Gadget) ---
+// The rank: the game's difficulty number, 0 to 63, made again every frame (003330 on) and read by the enemies' fire
+// (their intervals and speeds: 010A68 on, 03CDC0, 053F1E). It is a table's byte for the stage (the table's address in
+// the long at 10122E) plus the stage's number, 32 in the second loop, twice the ships held (101965, 101967), the bees' count
+// (103F8F), the frames played over 2048 (kFramesPlayed, a long counted up once a frame: 003088) and a sum from each
+// player's power and shot (003362 on); it stops at 63 (003424). Found: a run's dumps showed it 24 at the start, 27 and 28 as the power grew, 29 by the stage's end, 36
+// as stage 2 began; the same sum is read from the code. The game keeps its halves too (a word each, at 10196A, 10196C
+// and 10196E: a half, a quarter, and twice what is over 32), which the enemies use in place of the whole.
+constexpr uint32_t kRank = 0x101969;
+constexpr int kRankMost = 63;
+constexpr uint32_t kFramesPlayed = 0x101970;
+// The chain's hits (a word in BCD: the 0x13 on the screen's counter is 19; found: the dump at the frame the screen said
+// 13 hits held 0x13 here), and the timer that runs the chain out (a word counted down a frame at a time, 0 and the
+// hits gone: 044ECE; set to 240 as the hits reach 10, 180 under that, and again by each hit: 044244, 04426E). The hits
+// stay in kChainHits after the timer is out (until the next chain begins), so they count only while the timer is not 0.
+// Found: the timer went 154, 150, 146 ... 124 in dumps 4 frames apart while the screen's gauge ran down
+constexpr uint32_t kChainHits = 0x1017EA, kChainTimer = 0x1017D2;
+constexpr int kChainTimerFull = 240;
+// The most hits in a chain this game (a word in BCD, player 1's; 004714 makes it 0 at a game's beginning, 0441DA
+// keeps the larger of it and the hits: found, it followed the hits' top through a run and went to 0 at a continue)
+constexpr uint32_t kChainBest = 0x101842;
+// The ships lost this game (a word: found, 0, 1, 2 as three ships were lost one after the other; 0 again when the
+// game ends) and the continues used (a word: 0x100 as a game begins, 0x101 after one continue: 00470C, 004C14; found
+// by continuing, which also began the score from 0)
+constexpr uint32_t kShipsLost = 0x101948, kContinues = 0x10174E;
+constexpr int kNoContinues = 0x100;
+// The bees (the bonus items whose value doubles with each, 10 to 8000 and on to 1,000,000: 04D2BC, tables at 04D3A4
+// and 04D3FC): the count taken this stage with no ship lost (a word: 0 as a stage ends and as a ship is lost, 0013E6,
+// 006E1A; found: 0, then 1 and 2 in a stage of a run in which the ship swept the screen), and the sets of 13 taken
+// whole (a word: one more as the 13th is taken, 04D2F6; 0 at a game's beginning, 004DBE; found: it went 0 to 1 as
+// the count was held at 12 by a poke in the headless runner and a bee taken)
+constexpr uint32_t kBees = 0x103F8E, kBeeSets = 0x1017C2;
+constexpr int kBeeSetSize = 13;
+// The second loop's test (040038 on, at the first loop's end: not a game from the attract show, as the mode word
+// tells): the game goes on into the second loop when the player has not continued and ANY of: ships lost 2 or fewer;
+// the best chain at least a number by ship (the BCD words at 040038: 270, 300, 330 hits, the ship's kind a word at
+// 102CA8, 0 to 2); a score of 50,000,000 (5000000 in BCD tens) or more; 4 or more sets of bees. The inputs were
+// watched as above; the test itself is read from the code (not run: it comes at the end of the first loop's last stage)
+constexpr uint32_t kShipKind = 0x102CA8;
+constexpr int kLoopChains[3] = {270, 300, 330};
+constexpr int kLoopMissesMost = 2, kLoopBeeSets = 4;
+constexpr long long kLoopScore = 50000000;
+
 // --- What hits the ship (the game's own test, 0057EE, run for each ship: a4 its record) ---
 // Positions are in 64ths of the board's pixels (the sprites are placed at a position over 64: 05A7DC), across the
 // board's 320 and down its 240 (the monitor's sideways, the picture is turned to stand up).
