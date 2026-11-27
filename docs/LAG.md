@@ -46,6 +46,16 @@ as without it, byte for byte (the state hash, the picture log and `--sound-log` 
 `SPELUNK_NO_AHEAD_KEEP=1` turns it off. The program says at its end how many frames were kept and how many run
 again.
 
+**The processor between frames** (Game: Processor between frames). A frame's work done, the program waits for the
+next, and a processor idle for a good part of each frame has its clock turned down by its power management: a Steam
+Machine (amd-pstate-epp, balance_performance) ran SaiDaiOuJou's boss at 3.68 GHz in play against 4.78 headless, and
+run-ahead's frames run again then start on a slow core. Light, the default, spends the last 3 ms of each wait busy
+(the core paused in a loop, port/keep_awake.h); Full the whole wait, the GPU's waits too; with run-ahead at 2 frames
+or more, Light is Full. On that Steam Machine, at the boss: run-ahead off, 7.8 ms a frame (median) with it off, 6.0
+Light, 5.45 Full; run-ahead 2 with the stick moving, the frames over the board's 16.7 ms from 540 to 270 (Full) and
+a frame run again from 18.3 to 15.4 ms. The frames, state and pictures are the same in every mode (the state and
+VRAM hashes compared).
+
 ## Measured, not assumed
 
 `tools/lag.sh ROMS` (GAME=<id>): into play, then the stick pushed at a known frame; the first frame whose picture
