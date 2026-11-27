@@ -56,6 +56,9 @@ else
     cp "$B/$GAME" "$B/$GAME-launcher" "$APP/Contents/MacOS/"
 fi
 
+# The checked-in macOS app icon.
+cp "$(dirname "$0")/../assets/macos/AppIcon.icns" "$APP/Contents/Resources/"
+
 # SDL3 from Homebrew, carried inside the bundle
 for exe in "$APP/Contents/MacOS/"*; do
     otool -L "$exe" | awk '/libSDL3/ {print $1}' | while read -r lib; do
@@ -109,6 +112,7 @@ cat > "$APP/Contents/Info.plist" <<PLIST
     <key>CFBundleIdentifier</key><string>$APP_ID</string>
     <key>CFBundleExecutable</key><string>$EXE</string>
     <key>CFBundlePackageType</key><string>APPL</string>
+    <key>CFBundleIconFile</key><string>AppIcon.icns</string>
     <key>CFBundleShortVersionString</key><string>$VERSION</string>
     <key>CFBundleVersion</key><string>1</string>
     <key>LSMinimumSystemVersion</key><string>13.0</string>

@@ -8,9 +8,6 @@ rom/
 *.7z
 *.bin
 *.state
-*.png
-!docs/screenshots/*.png
-!recomp-common/launcher/flags.png
 .DS_Store
 .claude/
 tools/m68k/__pycache__/
