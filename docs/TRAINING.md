@@ -230,6 +230,26 @@ reads each one's value now ("" hides it).
 | --- | --- |
 | Muchi Muchi Pork! | LARD: the lard meter as a number, out of 104 (the game draws only its bar) |
 
+## M2-style gadgets (runtime/game.h: Game::gadgets; port/gadgets.h)
+
+The feature "M2-style gadgets" (Training mode page, every game): framed panels in the space a stood-up picture leaves
+at its sides in a wide window, as M2's ports (Battle Garegga Rev.2016, ESP Ra.De. Psi, Ketsui Deathtiny) have them.
+Drawn on a picture of their own a whole fraction of the window's size (about 360 lines, so each of its dots is a few
+of the window's pixels, sharp), laid over the window as the touch controls' layer is (those, while they show, come
+first: they want the same sides). Read from the board after each frame shown, never written to it: the game runs the
+same frames with them on, online too (they are each player's own).
+
+Every game has the toolkit's: CONTROLS (the stick and buttons held) and, where its facts give player 1's score and the
+stage (Game::score, Game::stage), SCORE BY STAGE (what each stage made, the stage now marked, and the total; begun
+again when the score goes down, a new game). A game with scoring readouts and no gadgets of its own shows them as one
+panel, COUNTERS. A game's own are Words (lines), a Meter (a bar, with words over it) or a Graph (the value kept every
+8 frames over the last half minute, the rank graph). A side too narrow for a panel (84 of its dots) gives its gadgets
+to the other; none are drawn when neither has room (the picture across the window: As the cabinet, or a tall window).
+
+| Game | Its own gadgets |
+| --- | --- |
+| Dai-Ou-Jou Black Label | RANK (the game rank, a graph), BULLET SPEED (with the hyper rank), CHAIN (the gauge, hits, best), HYPER (the gauge or the time left, items held), BEES, TO THE 2ND LOOP (the game's own test); score by stage |
+
 ## Not yet
 
 The other games' scoring readouts (rank, Mushihimesama's counter, Espgaluda II's gems, gold and kakusei gauge,
