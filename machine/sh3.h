@@ -22,6 +22,7 @@
 #include <cstdio>
 #include <cstring>
 #include <functional>
+#include <memory>
 #include <unordered_map>
 #include <vector>
 
@@ -80,6 +81,34 @@ enum : uint32 {
     kSrRB = 1u << 29,
     kSrMD = 1u << 30,
     kSrMask = 0x700003F3u,
+};
+
+// The plans a translated block's sites keep (Option B, docs/SLOWDOWN.md): a site is a data access or a taken branch in
+// the block whose path since the last event is the block's own code. The first time a site's event takes the generic
+// path, the path it used (the memo's, or found) is kept for it, if it is known, its key is the block's (the last event
+// in the block, or the block's start reached by a branch) and it read the block's bytes alone; from then on the
+// event runs that plan as data (Sh3Timing::Run), no lookup. Up to two keys (the last event's `from` and the register it
+// loaded) a site; a third is not kept (the generic path for it). A plan depends on its key and the block's bytes
+// alone, and the block's translation is used only while its bytes are RAM's (SH3::Lookup), so the plans live with the
+// translation; they hold no state (a state loaded, run-ahead's or rollback's moment put back, keep them).
+struct SitePlans {
+    struct Plan {
+        uint32 from;
+        sint8 lastLoad;
+        uint8 fetches, ops;
+        uint16 tail, span;
+        Sh3Timing::PathInfo info;
+        uint32 fetchAt, opAt;
+    };
+    struct Site {
+        sint32 access[2] = {-1, -1}, taken[2] = {-1, -1}; // (plans[], -1 none)
+        uint8 refused[2] = {0, 0}; // (paths not kept, an access's and a branch's: from two on, none is made again)
+    };
+    std::vector<uint8> index; // (a byte a halfword of the block: its site's number in sites, one on; 0 none)
+    std::vector<Site> sites;
+    std::vector<Plan> plans;
+    std::vector<uint32> fetch;
+    std::vector<Sh3Timing::Plan::Op> op;
 };
 
 class SH3 {
@@ -155,17 +184,31 @@ public:
         std::memcpy(&op, ram + (p & (kRamSize - 2)), 2);
         return __builtin_bswap16(op);
     }
+    // The plans the translated code's sites keep (SitePlans, above): the running block's translation and its place,
+    // while its own code is not written (codeWritten, NoteCodeWrite); RunBlocks sets them. A site's event is then
+    // its slot's (SiteAccess, SiteTaken: runtime/dispatch.cpp), the generic path where it has no plan of its key
+    struct Translation;
+    Translation *planBlock = nullptr;
+    uint32 planStart = 0, planBytes = 0;
+    bool codeWritten = false;
+    bool plansOn = true;     // (SPELUNK_NO_PLANS=1: every event the generic path's)
+    uint32 plantPlan = 0;    // (SPELUNK_PLANT_PLAN=1: the first plan kept a cycle longer, for the shadow to find)
+    uint64 plannedEvents = 0, genericEvents = 0;
+    uint32 SiteAccess(uint32 a, uint32 bytes, bool write);
+    uint32 SiteTaken(uint32 branch, uint32 target);
     void TimeAccess(uint32 a, uint32 bytes, bool write) {
+        uint32 got;
+        if (planBlock && !codeWritten && at - planStart < planBytes) [[likely]] {
+            got = SiteAccess(a, bytes, write);
+        } else {
+            got = memoryTiming.Access(timingPaths, at, a, bytes, write, inSlot, cycles, [this](uint32 p) -> uint16 { return TimingCode(p); });
+            genericEvents++;
+        }
 #ifdef SPELUNK_SHADOW_TIMING
         const uint32 want = refTiming.Access(refPaths, at, a, bytes, write, inSlot, cycles, [this](uint32 p) -> uint16 { return TimingCode(p); });
-        const uint32 got = memoryTiming.Access(timingPaths, at, a, bytes, write, inSlot, cycles,
-                                               [this](uint32 p) -> uint16 { return TimingCode(p); });
         ShadowEvent(write ? 'W' : 'R', at, a, bytes, got, want);
-        cycles += got;
-#else
-        cycles += memoryTiming.Access(timingPaths, at, a, bytes, write, inSlot, cycles,
-                                      [this](uint32 p) -> uint16 { return TimingCode(p); });
 #endif
+        cycles += got;
         if (at == poll.reader) [[unlikely]] {
             poll.read = cycles; // (the poll loop's read: when it is made, after what the model charged)
         }
@@ -173,14 +216,18 @@ public:
     // A taken branch (or any instruction that set the PC) at `branch`, its delay slot run and counted: PC is where it
     // went. Translated code calls it at the same point
     void TimeBranch(uint32 branch, uint32 target) {
+        uint32 got;
+        if (planBlock && !codeWritten && branch - planStart < planBytes) [[likely]] {
+            got = SiteTaken(branch, target);
+        } else {
+            got = memoryTiming.Taken(timingPaths, branch, target, cycles, [this](uint32 p) -> uint16 { return TimingCode(p); });
+            genericEvents++;
+        }
 #ifdef SPELUNK_SHADOW_TIMING
         const uint32 want = refTiming.Taken(refPaths, branch, target, cycles, [this](uint32 p) -> uint16 { return TimingCode(p); });
-        const uint32 got = memoryTiming.Taken(timingPaths, branch, target, cycles, [this](uint32 p) -> uint16 { return TimingCode(p); });
         ShadowEvent('B', branch, target, 0, got, want);
-        cycles += got;
-#else
-        cycles += memoryTiming.Taken(timingPaths, branch, target, cycles, [this](uint32 p) -> uint16 { return TimingCode(p); });
 #endif
+        cycles += got;
         if (branch == target + 4) [[unlikely]] {
             PollTurn(target);
         }
@@ -356,6 +403,11 @@ public:
         const uint32 page = (a & (kRamSize - 1)) >> 12;
         if (codeMark[page]) [[unlikely]] {
             ++pageEpoch[page];
+            // (the running block's own code written: its sites' plans are not used for the rest of this run; a word's
+            // write that only reaches into it counts)
+            if (((a & 0x1FFFFFFFu) + 3u - (planStart & 0x1FFFFFFFu)) < planBytes + 3u) {
+                codeWritten = true;
+            }
         }
     }
     // Writes to RAM from outside the CPU
@@ -478,6 +530,8 @@ public:
         sint8 wait = -1;
         uint8 n0 = 0, m0 = 0, n1 = 0, m1 = 0, m3 = 0;
         uint32 waitCost = 0;
+        // (its sites' plans: none until its first, SitePlans)
+        std::unique_ptr<SitePlans> plans;
     };
     // The frame's wait with the timing model off (docs/SLOWDOWN.md, "The poll loop"): the turns before the block's last
     // worked out at once, the block running that one itself

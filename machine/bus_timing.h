@@ -684,11 +684,46 @@ struct Sh3Timing {
     // a delay slot (the CPU knows whether a conditional delayed branch before it was taken)
     template <typename Code>
     SPELUNK_TIMING_HOT uint32_t Access(Sh3Paths &paths, uint32_t insn, uint32_t address, uint32_t bytes, bool write, bool cpuSlot, uint64_t now, Code code);
+    // (the access itself, after the code since the last event cost `extra`: the cache, the bus, the pipeline's state.
+    // AccessDataOut, one copy of it, for the plans the translated sites keep, SitePlans in sh3.h)
+    template <typename Code>
+    SPELUNK_TIMING_HOT uint32_t AccessData(Sh3Paths &paths, uint32_t insn, uint32_t address, uint32_t bytes, bool write, uint64_t now, uint32_t extra, bool streamed, Code code);
+    template <typename Code>
+    __attribute__((noinline)) uint32_t AccessDataOut(Sh3Paths &paths, uint32_t insn, uint32_t address, uint32_t bytes, bool write, uint64_t now, uint32_t extra, bool streamed, Code code) {
+        return AccessData(paths, insn, address, bytes, write, now, extra, streamed, code);
+    }
     // A branch taken (or any instruction that set the PC: an exception, a sleep) by the instruction at `branch`, its
     // delay slot run and the plain count at `now`: the cycles the code since the last event and the branch cost
     // beyond the plain count. The next event's path starts at `target`
     template <typename Code>
     SPELUNK_TIMING_HOT uint32_t Taken(Sh3Paths &paths, uint32_t branch, uint32_t target, uint64_t now, Code code);
+    // (Taken with the path's cost given by `stream()`: Stream's, or a site's plan)
+    template <typename Code, typename StreamFn>
+    SPELUNK_TIMING_HOT uint32_t TakenCore(uint32_t branch, uint32_t target, uint64_t now, Code code, StreamFn stream);
+    // A path's plan, as StreamNew makes it for the key `from`, `insn` (a branch: `branch`) and `lastLoad`, with the
+    // RAM it read (from lo, bytes of it; lo kNoLine none): made for a translated site, nothing of the model's changed
+    struct Made {
+        Plan plan;
+        PathInfo info;
+        uint32_t lo, bytes;
+    };
+    template <typename Code>
+    __attribute__((noinline)) void DerivePlan(uint32_t key, int8_t load, uint32_t insn, bool branch, Code code, Made &made) {
+        uint32_t lo = kNoLine, hi = 0;
+        auto watched = [&](uint32_t a) -> uint16_t {
+            if ((a & 0x1F000000u) == 0x0C000000u && a < 0xE0000000u) { // (main RAM, as Sh3Paths::Watching reads it)
+                lo = a < lo ? a : lo;
+                hi = a > hi ? a : hi;
+            }
+            return code(a);
+        };
+        MakePath(key, load, insn, branch, watched, made.plan, made.info);
+        made.lo = lo;
+        made.bytes = lo == kNoLine ? 0 : hi - lo + 2;
+    }
+    // (StreamNew's and DerivePlan's one way of making a path's plan: FindPath, the branch's own cycles, the info)
+    template <typename Code>
+    SPELUNK_TIMING_HOT void MakePath(uint32_t key, int8_t load, uint32_t insn, bool branch, Code watched, Plan &plan, PathInfo &info);
     // An interrupt taken: the pipeline starts again at `target`
     void Redirect(uint32_t target, uint64_t now) {
         from = target | 1;
@@ -893,16 +928,23 @@ inline uint32_t Sh3Timing::Stream(Sh3Paths &paths, uint32_t insn, bool branch, b
 // (a path not kept: found)
 template <typename Code>
 uint32_t Sh3Timing::StreamNew(Sh3Paths &paths, uint32_t insn, bool branch, bool cpuSlot, uint64_t now, Code code) {
-    Step path[kPathMax];
-    PathInfo info{};
-    uint32_t count = 0;
-    bool known = false;
     Sh3Paths::Watching watching;
     auto watched = [&](uint32_t a) -> uint16_t {
         watching.Read(a);
         return code(a);
     };
-    FindPath(from, insn, branch, watched, path, count, known);
+    Plan plan;
+    PathInfo info{};
+    MakePath(from, lastLoad, insn, branch, watched, plan, info);
+    paths.Keep(from, insn | (branch ? 1u : 0u), info, plan, watching);
+    return Run(plan.fetch, plan.fetches, plan.op, plan.ops, plan.tail, plan.span, info, branch, cpuSlot, now);
+}
+template <typename Code>
+SPELUNK_TIMING_HOT void Sh3Timing::MakePath(uint32_t key, int8_t load, uint32_t insn, bool branch, Code watched, Plan &plan, PathInfo &info) {
+    Step path[kPathMax];
+    uint32_t count = 0;
+    bool known = false;
+    FindPath(key, insn, branch, watched, path, count, known);
     if (branch) {
         // (the branch's own cycles and its bubble, after its slot where it has one)
         const uint16_t op = watched(insn);
@@ -915,10 +957,11 @@ uint32_t Sh3Timing::StreamNew(Sh3Paths &paths, uint32_t insn, bool branch, bool 
             path[count - 1].advance = TakenAdvance(op, 0);
         }
     }
+    info = PathInfo{};
     info.count = static_cast<uint16_t>(count);
     info.known = known;
-    info.lastLoad = lastLoad;
-    info.useStall = lastLoad >= 0 && Reads(watched(path[0].address), lastLoad) ? UseWait(lastLoad) : 0;
+    info.lastLoad = load;
+    info.useStall = load >= 0 && Reads(watched(path[0].address), load) ? UseWait(load) : 0;
     if (!branch) {
         const Branch before = path[count - 1].address == insn && count >= 2 && path[count - 2].address == insn - 2
                                   ? BranchKind(watched(insn - 2))
@@ -927,10 +970,7 @@ uint32_t Sh3Timing::StreamNew(Sh3Paths &paths, uint32_t insn, bool branch, bool 
         info.load = static_cast<int8_t>(LoadTarget(watched(insn)));
         info.own = Cycles(watched(insn));
     }
-    Plan plan;
     MakePlan(path, info, branch, plan);
-    paths.Keep(from, insn | (branch ? 1u : 0u), info, plan, watching);
-    return Run(plan.fetch, plan.fetches, plan.op, plan.ops, plan.tail, plan.span, info, branch, cpuSlot, now);
 }
 
 // (what Sh3Timing::Access, Taken, Stream and Walk do is said where they are declared)
@@ -967,6 +1007,10 @@ inline uint32_t Sh3Timing::Access(Sh3Paths &paths, uint32_t insn, uint32_t addre
     if (streamed) {
         extra += Stream(paths, insn, false, cpuSlot, now, code);
     }
+    return AccessData(paths, insn, address, bytes, write, now, extra, streamed, code);
+}
+template <typename Code>
+inline uint32_t Sh3Timing::AccessData(Sh3Paths &paths, uint32_t insn, uint32_t address, uint32_t bytes, bool write, uint64_t now, uint32_t extra, bool streamed, Code code) {
     const uint64_t t = now + extra;
     if (!Cached(address)) {
         extra += Single(address, bytes, write, t);
@@ -1001,6 +1045,10 @@ inline uint32_t Sh3Timing::Access(Sh3Paths &paths, uint32_t insn, uint32_t addre
 
 template <typename Code>
 inline uint32_t Sh3Timing::Taken(Sh3Paths &paths, uint32_t branch, uint32_t target, uint64_t now, Code code) {
+    return TakenCore(branch, target, now, code, [&]() __attribute__((always_inline)) { return Stream(paths, branch, true, false, now, code); });
+}
+template <typename Code, typename StreamFn>
+inline uint32_t Sh3Timing::TakenCore(uint32_t branch, uint32_t target, uint64_t now, Code code, StreamFn stream) {
     uint32_t extra = 0;
     if (lastInsn == branch + 2 && from == branch + 4) {
         // (its slot made the last access: the branch was stepped on the way to it. The target's fetch then meets the
@@ -1011,7 +1059,7 @@ inline uint32_t Sh3Timing::Taken(Sh3Paths &paths, uint32_t branch, uint32_t targ
         const uint64_t decode = nextDecode + TakenAdvance(op, slotCycles) - slotCycles;
         extra = decode > now ? static_cast<uint32_t>(decode - now) : 0;
     } else {
-        extra = Stream(paths, branch, true, false, now, code);
+        extra = stream();
     }
     from = target | 1;
     lastInsn = 0;
