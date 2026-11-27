@@ -1409,6 +1409,9 @@ int main(int argc, char **argv) {
     const recomp::MenuCommand clipRow{kScenePage, "Record clip",
                                       "Saves the same for each frame from now, for as long as Clip length says, each layer's frames in a "
                                       "folder of their own (this row again, or Ctrl+F12, stops sooner). The game goes on as it does."};
+    const recomp::MenuCommand folderRow{kScenePage, "Show scenes folder",
+                                        "Opens exports/scenes beside your saves, where Save scene and Record clip write, in your file "
+                                        "manager."};
     bool hostWanted = false, attractWanted = false;
     int firstGameCommand = 0, stepCommand = -1, attractCommand = -1, sceneCommand = -1;
     auto setHostRow = [&](bool hosting) {
@@ -1426,6 +1429,9 @@ int main(int argc, char **argv) {
         sceneCommand = static_cast<int>(menuConfig.commands.size());
         menuConfig.commands.push_back(sceneRow);
         menuConfig.commands.push_back(clipRow);
+#ifndef __ANDROID__
+        menuConfig.commands.push_back(folderRow); // (a phone has no file manager to show it in)
+#endif
         menu.Configure(menuConfig);
     };
     // The Display page's Your own preset, under the Shader (recomp-common/own_shaders.h): the presets in the shaders
@@ -1957,6 +1963,34 @@ int main(int argc, char **argv) {
         }
         say(sceneExport.Save(scene, scenesFolder(), sceneName()));
     };
+    // (the Scene export page's Show scenes folder: made if there is none yet, and opened in the file manager, as a
+    // file:// link SDL hands the system)
+    auto showScenesFolder = [&]() {
+        const std::string folder = scenesFolder();
+        std::error_code error;
+        std::filesystem::create_directories(std::filesystem::path(std::u8string(folder.begin(), folder.end())), error);
+        std::string url = "file://";
+#ifdef _WIN32
+        url += '/';
+#endif
+        for (const unsigned char c : folder) {
+            if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '/' || c == '-' || c == '_' ||
+                c == '.' || c == '~' || c == ':') {
+                url += static_cast<char>(c);
+            } else if (c == '\\') {
+                url += '/';
+            } else {
+                static const char kHex[] = "0123456789ABCDEF";
+                url += '%';
+                url += kHex[c >> 4];
+                url += kHex[c & 15];
+            }
+        }
+        if (!SDL_OpenURL(url.c_str())) {
+            fprintf(stderr, "scene: could not open %s: %s\n", folder.c_str(), SDL_GetError());
+            say("THE SCENES FOLDER COULD NOT BE OPENED");
+        }
+    };
     auto sceneClip = [&]() {
         if (sceneExport.Recording()) {
             sceneExport.StopClip();
@@ -2034,6 +2068,8 @@ int main(int argc, char **argv) {
                 saveScene();
             } else if (chosen.id == sceneCommand + 1) {
                 sceneClip();
+            } else if (chosen.id == sceneCommand + 2) {
+                showScenesFolder();
             } else if (chosen.id == attractCommand) {
                 attractWanted = true;
             } else if (chosen.id >= firstGameCommand) {
