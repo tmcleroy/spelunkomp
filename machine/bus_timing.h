@@ -868,6 +868,14 @@ struct Sh3Timing {
     // translated code, runtime/plans.h, that is the same path's)
     template <typename Code, typename StreamFn>
     SPELUNK_TIMING_HOT uint32_t AccessCore(Sh3Paths &paths, uint32_t insn, uint32_t address, uint32_t bytes, bool write, uint64_t now, Code code, StreamFn stream);
+    // (the access itself, after the code since the last event cost `extra`: the cache, the bus, the pipeline's state;
+    // AccessDataOut, one copy of it, for the compiled plans: each site's own code is its plan alone)
+    template <typename Code>
+    SPELUNK_TIMING_HOT uint32_t AccessData(Sh3Paths &paths, uint32_t insn, uint32_t address, uint32_t bytes, bool write, uint64_t now, uint32_t extra, bool streamed, Code code);
+    template <typename Code>
+    __attribute__((noinline)) uint32_t AccessDataOut(Sh3Paths &paths, uint32_t insn, uint32_t address, uint32_t bytes, bool write, uint64_t now, uint32_t extra, bool streamed, Code code) {
+        return AccessData(paths, insn, address, bytes, write, now, extra, streamed, code);
+    }
     // A branch taken (or any instruction that set the PC: an exception, a sleep) by the instruction at `branch`, its
     // delay slot run and the plain count at `now`: the cycles the code since the last event and the branch cost
     // beyond the plain count. The next event's path starts at `target`
@@ -1202,6 +1210,10 @@ inline uint32_t Sh3Timing::AccessCore(Sh3Paths &paths, uint32_t insn, uint32_t a
     if (streamed) {
         extra += stream();
     }
+    return AccessData(paths, insn, address, bytes, write, now, extra, streamed, code);
+}
+template <typename Code>
+inline uint32_t Sh3Timing::AccessData(Sh3Paths &paths, uint32_t insn, uint32_t address, uint32_t bytes, bool write, uint64_t now, uint32_t extra, bool streamed, Code code) {
     const uint64_t t = now + extra;
     if (!Cached(address)) {
         SPELUNK_TS(g_timingStats.dataSingle += write && Area(address) == 3 && Region(address) != 7 ? 0 : 1;)
