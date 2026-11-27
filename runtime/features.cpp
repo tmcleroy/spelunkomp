@@ -191,11 +191,12 @@ const std::vector<recomp::FeatureInfo> &AllFeatures() {
     static const std::vector<recomp::FeatureInfo> all = [] {
         std::vector<recomp::FeatureInfo> list = ThisGame().features;
         if (!ThisGame().readouts.empty()) {
+            // (a choice of side, Off and Left the old off and on: a settings file from before means the same)
             list.push_back({"readouts", kTrainingPage, "Scoring readouts",
                             std::string("The counters the game keeps and does not show, read from its memory as it plays. Shown down "
-                                        "the left of the picture: ") +
+                                        "the left or the right of the picture, clear of the game's own counters on the other: ") +
                                 (ThisGame().readoutsWhat ? ThisGame().readoutsWhat : "") + ".",
-                            0, {}});
+                            0, {"Off", "Left", "Right"}});
         }
         // (the Board page's, from game.cfg, after the game's own; the Controls page's autofire after the toolkit's:
         // runtime/board_settings.h)

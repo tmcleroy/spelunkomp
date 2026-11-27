@@ -5,10 +5,13 @@ Versions follow [Semantic Versioning](https://semver.org/).
 
 ## Unreleased
 
-- **DoDonPachi Dai-Ou-Jou Black Label's scoring readouts**: the chain's hits and the time it has left, the best chain,
-  the hyper gauge (or, while a hyper is on, its level and the time it has left), the hyper items held, the hyper rank,
-  the bees taken in the stage, and the second loop's terms as the game tests them at the first loop's end (ships lost,
-  bombs used, stages with all ten bees, no continue). Read from the game's memory, on the Training mode page.
+- **DoDonPachi Dai-Ou-Jou Black Label's scoring readouts**, what the game keeps and does not show: the most hits in a
+  chain, the hyper gauge as a number (or, while a hyper is on, its level and the time it has left) with the hyper items
+  held and the hyper rank, the bees taken in the stage, and the second loop's terms as the game tests them at the first
+  loop's end (ships lost, bombs used, stages with all ten bees, no continue). Read from the game's memory while a stage
+  is played, on the Training mode page.
+- **Scoring readouts on the left or the right**: the switch is a choice of side (Off, Left, Right), so a game's own
+  counters on one side stay clear. A settings file from before means the same (on is Left).
 - **Hidden items, a kind of hit box**: where something a game hides is before it is found, as faint lines across the
   picture meeting there. Dai-Ou-Jou Black Label's hidden bees, read from its enemies' records as the stage puts them
   there: every stage and loop. On the Hit boxes page, its own colour or hidden, like the other kinds.

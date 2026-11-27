@@ -31,11 +31,6 @@ namespace {
         using namespace ddpdojblk;
         return Word(board, kMode) == kModePlayed && !Word(board, kDemoInputs) && !Word(board, kDemoInputs + 2);
     }
-    // A bar of `cells` cells, `filled` of `full` of them filled: "[#####---]"
-    std::string Bar(int filled, int full, int cells = 10) {
-        const int n = full > 0 ? std::clamp(filled * cells / full, 0, cells) : 0;
-        return "[" + std::string(n, '#') + std::string(cells - n, '-') + "]";
-    }
     // The boxes the game's hit test (244D62) uses, read as it reads them
     void HitBoxes(const Board &board, std::vector<HitBox> &out) {
         using namespace ddpdojblk;
@@ -182,33 +177,26 @@ const Game &ThisGame() {
         f.hitBoxes = HitBoxes;
         f.hitKinds |= 1u << HitBox::Ground | 1u << HitBox::Shot | 1u << HitBox::Hidden;
         Game g = shmup::MakeGame(ddpdojblk::kCredits, f);
-        // (the scoring readouts: the chain, the best chain, the hyper gauge, the hyper items held, the hyper rank,
-        // the bees and the second loop's terms)
+        // (the scoring readouts: what the game keeps and does not show)
         using namespace ddpdojblk;
         g.readouts = {
-            {"CHAIN", [](const Board &board) {
-                 return Playing(board) ? std::to_string(Bcd(Word(board, kChain))) + " " +
-                                             Bar(Word(board, kChainGauge), kChainGaugeFull)
-                                       : std::string();
-             }},
+            // (the game shows the chain's hits, the hyper gauge as its bar and the hyper items held itself: the most hits
+            // in a chain and the gauge as a number it does not)
             {"BEST ", [](const Board &board) {
                  return Playing(board) ? std::to_string(Bcd(Word(board, kChainBest))) : std::string();
              }},
+            // (one line: the gauge, or while a hyper is on its level and the time it has left; the items held; the rank)
             {"HYPER", [](const Board &board) {
                  if (!Playing(board)) {
                      return std::string();
                  }
+                 const std::string rank = " RANK " + std::to_string(Word(board, kHyperRank));
                  if (Byte(board, kHyperOn)) {
-                     return "ON LV" + std::to_string(Byte(board, kHyperLevel)) + " " + Bar(Word(board, kHyperLeft), kHyperFull);
+                     return "ON LV" + std::to_string(Byte(board, kHyperLevel)) + " " +
+                            std::to_string(std::min(Word(board, kHyperLeft), kHyperFull) * 100 / kHyperFull) + "%" + rank;
                  }
-                 return std::to_string(std::min(Word(board, kHyperGauge), kHyperFull) * 100 / kHyperFull) + "% " +
-                        Bar(Word(board, kHyperGauge), kHyperFull);
-             }},
-            {"STOCK", [](const Board &board) {
-                 return Playing(board) ? std::to_string(Byte(board, kHyperStock)) : std::string();
-             }},
-            {"H.RANK", [](const Board &board) {
-                 return Playing(board) ? std::to_string(Word(board, kHyperRank)) : std::string();
+                 return std::to_string(std::min(Word(board, kHyperGauge), kHyperFull) * 100 / kHyperFull) + "% x" +
+                        std::to_string(Byte(board, kHyperStock)) + rank;
              }},
             {"BEES ", [](const Board &board) {
                  return Playing(board) ? std::to_string(Word(board, kBees)) + "/10" : std::string();
@@ -224,10 +212,10 @@ const Game &ThisGame() {
                         std::to_string(bees) + "/3 " + (on ? "OK" : "OUT");
              }},
         };
-        g.readoutsWhat = "the chain's hits with the time it has left, the best chain this game, the hyper gauge "
-                         "(or, while a hyper is on, its level and the time it has left), the hyper items held, the "
-                         "hyper rank, the bees taken in this stage, and the second loop's terms (ships lost, bombs "
-                         "used, stages with all ten bees) as the game tests them";
+        g.readoutsWhat = "the most hits in a chain this game; the hyper gauge as a number (or, while a hyper is on, its "
+                         "level and the time it has left), the hyper items held and the hyper rank; the bees taken in "
+                         "this stage; and the second loop's terms (ships lost, bombs used, stages with all ten bees) as "
+                         "the game tests them";
         return g;
     }();
     return game;
