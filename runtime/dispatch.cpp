@@ -371,6 +371,10 @@ void SH3::InstallTranslations() {
     plantPlan = getenv("SPELUNK_PLANT_PLAN") ? 1u : 0u;
     size_t planCount = 0;
     const PlanBlock *plans = PlanBlocks(planCount);
+    // (SPELUNK_PLANS_TOP=N: the N busiest blocks' plans only, tools/plans/make_plans.py writing them busiest first)
+    if (const char *top = getenv("SPELUNK_PLANS_TOP")) {
+        planCount = std::min(planCount, static_cast<size_t>(strtoul(top, nullptr, 10)));
+    }
     size_t given = 0;
     for (size_t i = 0; i < planCount && !getenv("SPELUNK_NO_PLANS"); i++) {
         for (Translation &t : m_translations) {
