@@ -155,18 +155,46 @@ public:
         std::memcpy(&op, ram + (p & (kRamSize - 2)), 2);
         return __builtin_bswap16(op);
     }
+    // The plans compiled into the translated code (runtime/plans.h): the running block's sites, a slot a halfword
+    // (null: the generic path), while its code is not written (codeWritten, NoteCodeWrite)
+    using PlannedAccessFn = bool (*)(SH3 &, uint32 a, uint32 bytes, bool write, uint32 &got);
+    using PlannedTakenFn = bool (*)(SH3 &, uint32 branch, uint32 target, uint32 &got);
+    struct PlanSlot {
+        PlannedAccessFn access[2];
+        PlannedTakenFn taken[2];
+    };
+    const PlanSlot *planSlots = nullptr;
+    uint32 planStart = 0, planBytes = 0;
+    bool codeWritten = false;
+    uint32 plantPlan = 0; // (SPELUNK_PLANT_PLAN=1: one site's plan a cycle longer, for the shadow to find)
+    uint64 plannedEvents = 0, genericEvents = 0;
+    bool PlanAccess(uint32 a, uint32 bytes, bool write, uint32 &got) {
+        if (!planSlots || codeWritten || at - planStart >= planBytes) {
+            return false;
+        }
+        const PlanSlot &s = planSlots[(at - planStart) >> 1];
+        return s.access[0] && (s.access[0](*this, a, bytes, write, got) || (s.access[1] && s.access[1](*this, a, bytes, write, got)));
+    }
+    bool PlanTaken(uint32 branch, uint32 target, uint32 &got) {
+        if (!planSlots || codeWritten || branch - planStart >= planBytes) {
+            return false;
+        }
+        const PlanSlot &s = planSlots[(branch - planStart) >> 1];
+        return s.taken[0] && (s.taken[0](*this, branch, target, got) || (s.taken[1] && s.taken[1](*this, branch, target, got)));
+    }
     void TimeAccess(uint32 a, uint32 bytes, bool write) {
+        uint32 got;
+        if (PlanAccess(a, bytes, write, got)) {
+            plannedEvents++;
+        } else {
+            got = memoryTiming.Access(timingPaths, at, a, bytes, write, inSlot, cycles, [this](uint32 p) -> uint16 { return TimingCode(p); });
+            genericEvents++;
+        }
 #ifdef SPELUNK_SHADOW_TIMING
         const uint32 want = refTiming.Access(refPaths, at, a, bytes, write, inSlot, cycles, [this](uint32 p) -> uint16 { return TimingCode(p); });
-        const uint32 got = memoryTiming.Access(timingPaths, at, a, bytes, write, inSlot, cycles,
-                                               [this](uint32 p) -> uint16 { return TimingCode(p); });
         ShadowEvent(write ? 'W' : 'R', at, a, bytes, got, want);
-        cycles += got;
-#else
-        const uint32 got = memoryTiming.Access(timingPaths, at, a, bytes, write, inSlot, cycles,
-                                               [this](uint32 p) -> uint16 { return TimingCode(p); });
-        cycles += got;
 #endif
+        cycles += got;
         SPELUNK_TS(g_timingStats.Event(got);)
         if (at == poll.reader) [[unlikely]] {
             poll.read = cycles; // (the poll loop's read: when it is made, after what the model charged)
@@ -175,15 +203,18 @@ public:
     // A taken branch (or any instruction that set the PC) at `branch`, its delay slot run and counted: PC is where it
     // went. Translated code calls it at the same point
     void TimeBranch(uint32 branch, uint32 target) {
+        uint32 got;
+        if (PlanTaken(branch, target, got)) {
+            plannedEvents++;
+        } else {
+            got = memoryTiming.Taken(timingPaths, branch, target, cycles, [this](uint32 p) -> uint16 { return TimingCode(p); });
+            genericEvents++;
+        }
 #ifdef SPELUNK_SHADOW_TIMING
         const uint32 want = refTiming.Taken(refPaths, branch, target, cycles, [this](uint32 p) -> uint16 { return TimingCode(p); });
-        const uint32 got = memoryTiming.Taken(timingPaths, branch, target, cycles, [this](uint32 p) -> uint16 { return TimingCode(p); });
         ShadowEvent('B', branch, target, 0, got, want);
-        cycles += got;
-#else
-        const uint32 got = memoryTiming.Taken(timingPaths, branch, target, cycles, [this](uint32 p) -> uint16 { return TimingCode(p); });
-        cycles += got;
 #endif
+        cycles += got;
         SPELUNK_TS(g_timingStats.Event(got);)
         if (branch == target + 4) [[unlikely]] {
             PollTurn(target);
@@ -360,6 +391,11 @@ public:
         const uint32 page = (a & (kRamSize - 1)) >> 12;
         if (codeMark[page]) [[unlikely]] {
             ++pageEpoch[page];
+            // (the running block's own code written: its plans are not used for the rest of this run; a word's write
+            // that only reaches into it counts)
+            if (((a & 0x1FFFFFFFu) + 3u - (planStart & 0x1FFFFFFFu)) < planBytes + 3u) {
+                codeWritten = true;
+            }
         }
     }
     // Writes to RAM from outside the CPU
@@ -482,6 +518,8 @@ public:
         sint8 wait = -1;
         uint8 n0 = 0, m0 = 0, n1 = 0, m1 = 0, m3 = 0;
         uint32 waitCost = 0;
+        const PlanSlot *planSlots = nullptr; // (runtime/plans.h: its sites' plans; null, none)
+        uint32 planBytes = 0;
     };
     // The frame's wait with the timing model off (docs/SLOWDOWN.md, "The poll loop"): the turns before the block's last
     // worked out at once, the block running that one itself

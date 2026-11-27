@@ -505,6 +505,10 @@ int main(int argc, char **argv) {
                 static_cast<unsigned long long>(board->cpu.pollTurnsSkipped), static_cast<unsigned long long>(board->cpu.pollSkips),
                 static_cast<unsigned long long>(board->cpu.pollStatusTurns));
     }
+    if (board->cpu.plannedEvents + board->cpu.genericEvents) {
+        fprintf(stderr, "planned: %llu events served, %llu generic\n", static_cast<unsigned long long>(board->cpu.plannedEvents),
+                static_cast<unsigned long long>(board->cpu.genericEvents));
+    }
 #ifdef SPELUNK_SHADOW_TIMING
     fprintf(stderr, "shadow: %llu events compared with the reference model, all the same; %llu poll-loop skips (%llu turns) the same as the turns run, "
             "%llu of them worked out all at once and the same turn by turn\n",
@@ -513,6 +517,7 @@ int main(int argc, char **argv) {
 #endif
 #ifdef SPELUNK_TIMING_STATS
     spelunk::g_timingStats.Print(stderr);
+    spelunk::g_timingStats.WriteDump();
 #endif
     if (const char *path = getenv("SPELUNK_INTERPRETED")) {
         board->cpu.SaveInterpreted(path);
