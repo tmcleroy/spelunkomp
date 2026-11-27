@@ -1277,17 +1277,36 @@ int main(int argc, char **argv) {
         // (SPELUNK_AHEAD_TIMES=1, a measurement: the host's time of each frame by what run-ahead did in it, said at the
         // end; again[n]: the board put back and n frames run, the game's own and those ahead; kept: its frame taken)
         struct Times {
-            uint64_t n = 0, sum = 0, most = 0;
-            void Add(uint64_t ns) {
+            uint64_t n = 0, sum = 0, most = 0, cpu = 0;
+            void Add(uint64_t ns, uint64_t cpuNs) {
                 n++;
                 sum += ns;
+                cpu += cpuNs;
                 most = ns > most ? ns : most;
             }
-        } againTime[4], keptTime;
+        } againTime[4], keptTime, otherTime; // (otherTime: neither, as at run-ahead 0)
         int ranAgain = 0;     // (this frame: the board put back with this many frames to run, 0: not)
         bool keptNow = false; // (this frame: its first frame ahead taken)
     } aheadKept;
     const bool aheadTimes = getenv("SPELUNK_AHEAD_TIMES") != nullptr;
+    // (the main thread's own CPU time: against the wall's, the time it waited within the frame's work)
+    auto threadCpuNs = []() -> uint64_t {
+#ifdef _WIN32
+        return 0;
+#else
+        timespec ts{};
+        clock_gettime(CLOCK_THREAD_CPUTIME_ID, &ts);
+        return static_cast<uint64_t>(ts.tv_sec) * 1000000000ull + static_cast<uint64_t>(ts.tv_nsec);
+#endif
+    };
+    uint64_t cpuFrom = 0;
+#ifdef SPELUNK_TIMING_STATS
+    // (the timing model's counts over a window of play: begun SPELUNK_STATS_DELAY frames (600) after the game is first
+    // seen, a trip to the boss done; said at the end with the frames shown and run in it)
+    const uint64_t statsDelay = getenv("SPELUNK_STATS_DELAY") ? strtoull(getenv("SPELUNK_STATS_DELAY"), nullptr, 10) : 600;
+    uint64_t statsSeen = 0, statsShown = 0;
+    bool statsOn = false;
+#endif
     // (the frames ahead let go, the board being made anew or given another state: nothing put back)
     auto aheadForget = [&]() {
         for (const AheadKept::Frame &f : aheadKept.frames) {
@@ -2401,6 +2420,9 @@ int main(int argc, char **argv) {
     };
     while (running) {
         const uint64_t workFrom = SDL_GetTicksNS();
+        if (aheadTimes) {
+            cpuFrom = threadCpuNs();
+        }
         // (run-ahead's kept frame: taken as the game's next, or the board put back, before anything else of the loop
         // can touch the board)
         aheadKept.ranAgain = 0;
@@ -3198,12 +3220,25 @@ int main(int argc, char **argv) {
             const uint64_t workTo = SDL_GetTicksNS();
             hostTime.Add(workTo - workFrom, workTo);
             if (aheadTimes) {
+                const uint64_t cpuNs = threadCpuNs() - cpuFrom;
                 if (aheadKept.ranAgain) {
-                    aheadKept.againTime[std::min(aheadKept.ranAgain, 3)].Add(workTo - workFrom);
+                    aheadKept.againTime[std::min(aheadKept.ranAgain, 3)].Add(workTo - workFrom, cpuNs);
                 } else if (aheadKept.keptNow) {
-                    aheadKept.keptTime.Add(workTo - workFrom);
+                    aheadKept.keptTime.Add(workTo - workFrom, cpuNs);
+                } else if (!booting && !(ThisGame().unseen && ThisGame().unseen(*board, features) >= 0)) {
+                    aheadKept.otherTime.Add(workTo - workFrom, cpuNs);
                 }
             }
+#ifdef SPELUNK_TIMING_STATS
+            if (!booting && !(ThisGame().unseen && ThisGame().unseen(*board, features) >= 0)) {
+                if (!statsOn && ++statsSeen >= statsDelay) {
+                    statsOn = true;
+                    spelunk::g_timingStats.Reset();
+                } else if (statsOn) {
+                    statsShown++;
+                }
+            }
+#endif
         }
         presentPicture();
         fpsFrames++;
@@ -3378,14 +3413,26 @@ int main(int argc, char **argv) {
         hw.NetBack(aheadKept.frames.front().place); // (the game's own frame, for what is said and kept at the end)
         aheadForget();
     }
+    if (aheadTimes && aheadKept.otherTime.n) {
+        printf("run-ahead times: a frame with no run-ahead: %llu, mean %.2f ms, most %.2f ms, the main thread's CPU %.2f ms\n",
+               static_cast<unsigned long long>(aheadKept.otherTime.n), aheadKept.otherTime.sum / 1e6 / static_cast<double>(aheadKept.otherTime.n),
+               aheadKept.otherTime.most / 1e6, aheadKept.otherTime.cpu / 1e6 / static_cast<double>(aheadKept.otherTime.n));
+    }
+#ifdef SPELUNK_TIMING_STATS
+    if (statsOn) {
+        printf("timing stats: window: %llu frames shown\n", static_cast<unsigned long long>(statsShown));
+        spelunk::g_timingStats.Print(stdout);
+    }
+#endif
     if (aheadKept.kept + aheadKept.again) {
         printf("run-ahead: %llu frames kept, %llu run again\n", static_cast<unsigned long long>(aheadKept.kept),
                static_cast<unsigned long long>(aheadKept.again));
         if (aheadTimes) {
             auto say = [](const char *what, const AheadKept::Times &t) {
                 if (t.n) {
-                    printf("run-ahead times: %s: %llu, mean %.2f ms, most %.2f ms\n", what, static_cast<unsigned long long>(t.n),
-                           t.sum / 1e6 / static_cast<double>(t.n), t.most / 1e6);
+                    printf("run-ahead times: %s: %llu, mean %.2f ms, most %.2f ms, the main thread's CPU %.2f ms\n", what,
+                           static_cast<unsigned long long>(t.n), t.sum / 1e6 / static_cast<double>(t.n), t.most / 1e6,
+                           t.cpu / 1e6 / static_cast<double>(t.n));
                 }
             };
             say("a frame kept", aheadKept.keptTime);

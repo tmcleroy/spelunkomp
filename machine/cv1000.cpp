@@ -41,6 +41,7 @@ void Cv1000::RunFrame() {
     cpu.Run(m_frameEnd);
     sound.RunTo(cpu.cycles, kCpuHz);
     frame++;
+    SPELUNK_TS(g_timingStats.framesRun++;)
 #ifdef SPELUNK_SHADOW_TIMING
     cpu.ShadowCheckWhole("the frame's end");
 #endif

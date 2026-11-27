@@ -53,6 +53,14 @@ namespace spelunk {
 // What the model does, counted (-DTIMING_STATS=ON, a measuring build: off in a release; it changes no count). The
 // headless runner prints it at its end
 struct TimingStats {
+    uint64_t framesRun = 0; // (the board's frames run: run-ahead's run again among them)
+    // (the counts begun again: the game program's window, SPELUNK_STATS_DELAY)
+    void Reset() {
+        const uint32_t start = curStart, end = curEnd;
+        *this = TimingStats{};
+        curStart = start;
+        curEnd = end;
+    }
     uint32_t curStart = 0, curEnd = 0; // (the translated block running: its first instruction and past its last; 0: the interpreter's)
     uint64_t access = 0, accessSecond = 0, branch = 0, branchSlot = 0;
     uint64_t memoLast = 0, memoSet = 0, memoStale = 0, missFull = 0, streamNew = 0;
@@ -88,6 +96,7 @@ struct TimingStats {
     void Print(FILE *out) const {
         const auto u = [](uint64_t v) { return static_cast<unsigned long long>(v); };
         const uint64_t events = access + branch, streams = memoLast + memoSet + streamNew;
+        fprintf(out, "timing stats: frames run %llu\n", u(framesRun));
         fprintf(out, "timing stats: events %llu: access %llu (second %llu, not streamed), branch %llu (slot direct %llu)\n", u(events),
                 u(access), u(accessSecond), u(branch), u(branchSlot));
         fprintf(out, "timing stats: streams %llu: memo last %llu, memo set %llu, found %llu (of them memo stale %llu, set full %llu); "
