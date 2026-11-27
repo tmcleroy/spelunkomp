@@ -28,11 +28,11 @@ public:
     std::vector<uint32_t> pixels; // red in the low byte, alpha in the high; width x height, each dot `scale` window pixels
     int width = 0, height = 0, scale = 1;
 
-    // This frame's panels, for a window of ow x oh pixels with the picture at `picture` (its pixels too). `playing`:
-    // a player's game is played (Game::playing; the graphs and the score by stage only take it in then). `inputs`:
+    // This frame's panels, for a window of ow x oh pixels with the picture at `picture` (its pixels too). (Whether a
+    // game is played is each gadget's own: its words empty, its level false, the score -1 otherwise.) `inputs`:
     // player 1's controls held (machine/cv1000.h's kIn bits). True if the picture differs from the last (to be handed
     // on again); none to show: pixels empty
-    bool Frame(const spelunk::Game &game, const spelunk::Board &board, bool playing, uint32_t inputs, const SDL_FRect &picture, int ow,
+    bool Frame(const spelunk::Game &game, const spelunk::Board &board, uint32_t inputs, const SDL_FRect &picture, int ow,
                int oh) {
         m_words.clear();
         m_frame++;
@@ -46,7 +46,7 @@ public:
 
         // (what each gadget shows now: kept, for the graphs and the score by stage, whether or not there is room)
         m_items.clear();
-        TakeScores(game, board, playing);
+        TakeScores(game, board);
         m_history.resize(game.gadgets.size());
         for (size_t i = 0; i < game.gadgets.size(); i++) {
             const spelunk::Gadget &g = game.gadgets[i];
@@ -71,7 +71,7 @@ public:
                 }
                 item.value = std::clamp(value, 0, most);
                 item.most = most;
-                if (g.kind == spelunk::Gadget::Kind::Graph && playing && m_frame % kGraphEvery == 0) {
+                if (g.kind == spelunk::Gadget::Kind::Graph && m_frame % kGraphEvery == 0) {
                     std::vector<float> &h = m_history[i];
                     h.push_back(static_cast<float>(item.value) / most);
                     if (h.size() > kGraphSamples) {
@@ -210,13 +210,13 @@ private:
         }
         return out;
     }
-    void TakeScores(const spelunk::Game &game, const spelunk::Board &board, bool playing) {
+    void TakeScores(const spelunk::Game &game, const spelunk::Board &board) {
         if (!game.score || !game.stage) {
             return;
         }
         const long long score = game.score(board);
         const int stage = game.stage(board);
-        if (!playing || score < 0 || stage < 0) {
+        if (score < 0 || stage < 0) {
             return; // (the lines kept as they were: the last game's, until the next begins)
         }
         // (a new game: the score gone down)
@@ -233,7 +233,11 @@ private:
             const long long made = (i + 1 < m_entries.size() ? m_entries[i + 1].score : score) - m_entries[i].score;
             const int st = m_entries[i].stage;
             std::string name = st < static_cast<int>(game.stageNames.size()) ? game.stageNames[st] : std::to_string(st + 1);
-            name.resize(std::max<size_t>(name.size(), 4), ' ');
+            // ("Stage 3" shown as 3, as the games' own names give them)
+            if (name.rfind("Stage ", 0) == 0) {
+                name = name.substr(6);
+            }
+            name.resize(std::max<size_t>(name.size() + 1, 4), ' ');
             lines += (lines.empty() ? "" : "\n") + std::string(i + 1 == m_entries.size() ? ">" : " ") + name + Grouped(made);
         }
         lines += "\n TOTAL " + Grouped(score);
