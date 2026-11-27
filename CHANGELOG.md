@@ -5,6 +5,9 @@ Versions follow [Semantic Versioning](https://semver.org/).
 
 ## Unreleased
 
+- **Android and Linux ARM64 built with a profile**, as Linux x86_64 and Windows are: the same counts as Linux
+  x86_64's, since clang counts the source, not the processor. About 8% faster at SaiDaiOuJou's boss and 7% at Muchi
+  Muchi Pork's (Linux ARM64 on a MacBook Air), the same frames (the state hash each frame), and a smaller app.
 - **Run-ahead runs its frames again early** (run-ahead 1 and 2, offline): when the stick or a button changes, the
   frames ahead are run again in the wait before the next frame, not all at once at its start, so the change costs that
   frame one frame's work instead of three. The same frames, picture and sound. SaiDaiOuJou's boss on a Steam Machine

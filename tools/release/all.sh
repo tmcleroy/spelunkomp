@@ -12,9 +12,10 @@
 #   TARGETS="macos windows" tools/release/all.sh   # some of the targets (SHA256SUMS.txt is left alone)
 #   TARGETS="sums" tools/release/all.sh            # SHA256SUMS.txt alone, once every archive is in build/release/
 #   PGO=1 PGO_USE=folder tools/release/all.sh      # built with profile-guided optimisation: macOS with a profile
-#                                                  #   tools/release/pgo.sh makes first; Linux x86_64 with the
-#                                                  #   counts in PGO_USE (run-pgo-linux.sh's, docs/RELEASING.md).
-#                                                  #   PGO=1 with no PGO_USE stops; PGO_LINUX=0: Linux without one.
+#                                                  #   tools/release/pgo.sh makes first; Linux (x86_64, ARM64)
+#                                                  #   and Android with the counts in PGO_USE (run-pgo-linux.sh's,
+#                                                  #   docs/RELEASING.md). PGO=1 with no PGO_USE stops;
+#                                                  #   PGO_LINUX=0: Linux and Android without one.
 #                                                  #   Windows with the counts in PGO_USE_WINDOWS (run-pgo-windows.ps1's);
 #                                                  #   PGO=1 with none stops; PGO_WINDOWS=0: Windows without one
 #   PGO_GENERATE=1 TARGETS=linux-x86_64 tools/release/all.sh  # Linux's instrumented build, for run-pgo-linux.sh
@@ -52,19 +53,21 @@ step() {
 }
 
 # (PGO=1: Linux x86_64 is built with the counts made on a Steam Machine or Deck, PGO_USE=folder (linux.sh), or said to
-# be built without them, PGO_LINUX=0; checked before anything is built. ARM64 has no device the counts are made on:
-# it is built without them)
+# be built without them, PGO_LINUX=0; checked before anything is built. Linux ARM64 and Android are built with the
+# same counts: clang's are of the source, not the processor, and no ARM device makes them)
 LINUX_PGO_USE=""
 if [ "${PGO_LINUX:-}" = 0 ]; then
-    ! has_target linux-x86_64 || echo "PGO: Linux ships without a profile (PGO_LINUX=0)"
-elif has_target linux-x86_64 && { [ "${PGO:-}" = 1 ] || [ -n "${PGO_USE:-}" ]; }; then
+    ! has_target linux-x86_64 && ! has_target linux-arm64 && ! has_target android ||
+        echo "PGO: Linux and Android ship without a profile (PGO_LINUX=0)"
+elif { has_target linux-x86_64 || has_target linux-arm64 || has_target android; } &&
+    { [ "${PGO:-}" = 1 ] || [ -n "${PGO_USE:-}" ]; }; then
     if [ -z "${PGO_USE:-}" ]; then
         echo "error: PGO=1 with no Linux counts: PGO_USE=<the folder of run-pgo-linux.sh's raw.tar.gz, unpacked> (docs/RELEASING.md), or PGO_LINUX=0 to ship Linux without a profile" >&2
         exit 1
     fi
     [ -d "$PGO_USE" ] || { echo "error: no folder $PGO_USE (PGO_USE)" >&2; exit 1; }
     LINUX_PGO_USE="$(cd "$PGO_USE" && pwd -P)"
-    echo "PGO: Linux x86_64 built with the counts in $LINUX_PGO_USE (linux-arm64 without)"
+    echo "PGO: Linux x86_64, Linux ARM64 and Android built with the counts in $LINUX_PGO_USE"
 fi
 # (the same for Windows, with the counts made on a Windows PC: PGO_USE_WINDOWS=folder, or PGO_WINDOWS=0)
 WINDOWS_PGO_USE=""
@@ -159,11 +162,13 @@ if has_target linux-x86_64; then
     IMAGE_PGO_USE=""
 fi
 if has_target linux-arm64; then
+    IMAGE_PGO_USE="$LINUX_PGO_USE"
     step "linux-arm64" in_image spelunkomp-build-arm64 tools/release/linux.sh --platform linux/arm64
+    IMAGE_PGO_USE=""
 fi
 if has_target android; then
     # the Android app, signed with the release key (~/.config/spelunkomp/android-signing.env; the script refuses without it)
-    step "android" env RELEASE=1 tools/release/android.sh
+    step "android" env RELEASE=1 PGO_USE="$LINUX_PGO_USE" tools/release/android.sh
 fi
 if has_target windows; then
     IMAGE_PGO_USE="$WINDOWS_PGO_USE"
