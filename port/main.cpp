@@ -45,6 +45,7 @@
 #include "png_write.h"
 #include "shading.h"
 #include "sound_filter.h"
+#include "gadgets.h"
 #include "touch.h"
 #ifdef __ANDROID__
 #include "android.h"
@@ -388,6 +389,7 @@ int main(int argc, char **argv) {
     AddProgramFeatures(ArcadeFeatures()); // (not on a phone: it has no arcade monitor)
 #endif
     std::string configPath, romFolder = "rom", savesFolder, settingsPath, forcedFeatures;
+    int windowSizeW = 0, windowSizeH = 0; // (--window-size)
     std::string shaderFile; // (--shader FILE: that preset, whatever the Shader feature says)
     bool fullscreen = false, mute = false, softwareOnly = false, checkVideo = false, rollbackTest = false;
     uint64_t stopAfter = 0, frameCount = 0, netMenuHostAt = 0, beginNowAt = 0, attractAt = 0;
@@ -512,6 +514,8 @@ int main(int argc, char **argv) {
             attractAt = strtoull(argv[++i], nullptr, 0); // (tests: Attract mode's Start chosen at this frame)
         } else if (a == "--begin-now" && i + 1 < argc) {
             beginNowAt = strtoull(argv[++i], nullptr, 0); // (tests: the menu's Begin at the stage chosen at this frame)
+        } else if (a == "--window-size" && i + 1 < argc) {
+            sscanf(argv[++i], "%dx%d", &windowSizeW, &windowSizeH); // (checks: the window's size in points, WxH)
         } else if (a == "--features" && i + 1 < argc) {
             forcedFeatures = argv[++i]; // name=N (or a choice by name),name,-name whatever settings.ini says (checks)
         }
@@ -846,6 +850,10 @@ int main(int argc, char **argv) {
     };
     int startW = 720, startH = 960;
     windowSizeFor(0, startW, startH);
+    if (windowSizeW > 0 && windowSizeH > 0) {
+        startW = windowSizeW;
+        startH = windowSizeH;
+    }
 #ifdef __ANDROID__
     fullscreen = true; // (a phone: its one screen, all of it, the system's bars hidden)
 #endif
@@ -864,7 +872,12 @@ int main(int argc, char **argv) {
     // The controls on a touch screen (port/touch.h), drawn over the whole window
     port::TouchControls touch(config.count("buttons") ? config["buttons"] : "");
     std::vector<uint32_t> touchPicture;
-    SDL_Texture *touchTexture = nullptr; // (with SDL's renderer)
+    int touchW = 0, touchH = 0;
+    SDL_Texture *touchTexture = nullptr; // (with SDL's renderer: the window layer, the touch controls' or the gadgets')
+    // The M2-style gadgets (port/gadgets.h): in the window layer's place while the touch controls show nothing.
+    // gadgetsStale: their picture to be handed on at the next present; layerIsGadgets: what the layer shows now
+    port::Gadgets gadgets;
+    bool gadgetsStale = false, layerIsGadgets = false;
     const size_t touchAt = FeatureIndex("touch_controls");
     // The picture: the native renderer, or (--software, or no GPU that will do) the software blitter's through SDL's
     // renderer; or either's through a shader preset (port/shading.h), the native renderer then with no window of its
@@ -928,6 +941,7 @@ int main(int argc, char **argv) {
     auto closePresenter = [&]() {
         shading.reset();
         touch.Stale(); // (the next presenter is given the controls' picture again)
+        gadgetsStale = true;
         if (touchTexture) {
             SDL_DestroyTexture(touchTexture);
             touchTexture = nullptr;
@@ -1079,21 +1093,11 @@ int main(int argc, char **argv) {
     }
     // The touch controls laid out for the window and the picture's place in it, and their picture handed to whichever
     // draws the window, when it changed
-    auto touchLayer = [&]() {
-        touch.Allow(touchAt >= features.size() || features[touchAt] != 1);
-        touch.Follow(touchMovementAt >= features.size() || features[touchMovementAt] == 0);
-        int ow = 0, oh = 0;
-        SDL_GetWindowSizeInPixels(window, &ow, &oh);
-        touch.Layout(ow, oh, place());
-        int tw = 0, th = 0;
-        if (!touch.TakePicture(touchPicture, tw, th)) {
-            return;
-        }
-        const uint32_t *pixels = touchPicture.empty() ? nullptr : touchPicture.data();
+    auto setWindowLayer = [&](const uint32_t *pixels, int tw, int th, bool sharp) {
         if (shading) {
-            shading->SetWindowLayer(pixels, tw, th);
+            shading->SetWindowLayer(pixels, tw, th, sharp);
         } else if (useGpu) {
-            hw.gpu.SetWindowLayer(pixels, tw, th);
+            hw.gpu.SetWindowLayer(pixels, tw, th, sharp);
         } else if (renderer) {
             if (touchTexture) {
                 SDL_DestroyTexture(touchTexture);
@@ -1101,8 +1105,36 @@ int main(int argc, char **argv) {
             }
             if (pixels && (touchTexture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_ABGR8888, SDL_TEXTUREACCESS_STATIC, tw, th))) {
                 SDL_SetTextureBlendMode(touchTexture, SDL_BLENDMODE_BLEND);
+                SDL_SetTextureScaleMode(touchTexture, sharp ? SDL_SCALEMODE_NEAREST : SDL_SCALEMODE_LINEAR);
                 SDL_UpdateTexture(touchTexture, nullptr, pixels, tw * 4);
             }
+        }
+    };
+    auto touchLayer = [&]() {
+        touch.Allow(touchAt >= features.size() || features[touchAt] != 1);
+        touch.Follow(touchMovementAt >= features.size() || features[touchMovementAt] == 0);
+        int ow = 0, oh = 0;
+        SDL_GetWindowSizeInPixels(window, &ow, &oh);
+        touch.Layout(ow, oh, place());
+        int tw = 0, th = 0;
+        const bool touchChanged = touch.TakePicture(touchPicture, tw, th);
+        if (touchChanged) {
+            touchW = tw;
+            touchH = th;
+        }
+        // (the touch controls showing: theirs; the gadgets' otherwise, or none)
+        if (!touchPicture.empty()) {
+            if (touchChanged || layerIsGadgets) {
+                setWindowLayer(touchPicture.data(), touchW, touchH, false);
+                layerIsGadgets = false;
+                gadgetsStale = true;
+            }
+            return;
+        }
+        if (touchChanged || gadgetsStale) {
+            layerIsGadgets = !gadgets.pixels.empty();
+            setWindowLayer(layerIsGadgets ? gadgets.pixels.data() : nullptr, gadgets.width, gadgets.height, true);
+            gadgetsStale = false;
         }
     };
     // The Screen or Aspect feature changed in the menu: a window (not full screen, not maximised) made the new shape,
@@ -3400,6 +3432,17 @@ int main(int argc, char **argv) {
             if (netOn) {
                 auto on = [&](const char *name) { return FeatureIndex(name) < features.size() && features[FeatureIndex(name)] != 0; };
                 netScreen.Match(hud, *net, localIn, on("online_ping"), on("online_delay"), on("online_hide_names"), tick, frameCount);
+            }
+            // (the M2-style gadgets beside the picture: port/gadgets.h)
+            if (const size_t at = FeatureIndex("gadgets"); at < features.size() && features[at]) {
+                int ow = 0, oh = 0;
+                SDL_GetWindowSizeInPixels(window, &ow, &oh);
+                const bool playingNow = ThisGame().playing ? ThisGame().playing(*board) : true;
+                if (gadgets.Frame(ThisGame(), *board, playingNow, board->inputs[0], place(), ow, oh)) {
+                    gadgetsStale = true;
+                }
+            } else if (gadgets.Off()) {
+                gadgetsStale = true;
             }
             const bool changed = hud.Changed();
             if (changed) {

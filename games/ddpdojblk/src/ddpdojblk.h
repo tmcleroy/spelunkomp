@@ -100,6 +100,9 @@ constexpr uint32_t kChainGauge = 0x81B5C0;
 constexpr int kChainGaugeFull = 0x38;
 // The most hits in one chain this game (BCD, a word)
 constexpr uint32_t kChainBest = 0x81B632;
+// Player 1's score (a long word in BCD, in tens: 0x00041624 for 416,240; found 2026-11-27 by the score shown, and
+// counting up with it)
+constexpr uint32_t kScore1 = 0x81B440;
 // The hyper gauge (a word): filled by kills, chains and bees, a hyper item let go when it reaches kHyperFull (the
 // game holds it there, 287686, and sets it to 0 as the item comes)
 constexpr uint32_t kHyperGauge = 0x81B64A;
