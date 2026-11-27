@@ -7,7 +7,8 @@ Versions follow [Semantic Versioning](https://semver.org/).
 
 - **DoDonPachi Dai-Ou-Jou Black Label's scoring readouts**, what the game keeps and does not show: the most hits in a
   chain, the hyper gauge as a number (or, while a hyper is on, its level and the time it has left) with the hyper items
-  held and the hyper rank, the bees taken in the stage, and the second loop's terms as the game tests them at the first
+  held, the ranks as the game works them out (the bullets' speed, the game rank that sets their interval, the hyper
+  rank), the bees taken in the stage, and the second loop's terms as the game tests them at the first
   loop's end (ships lost, bombs used, stages with all ten bees, no continue). Read from the game's memory while a stage
   is played, on the Training mode page.
 - **Scoring readouts on the left or the right**: the switch is a choice of side (Off, Left, Right), so a game's own

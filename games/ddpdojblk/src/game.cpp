@@ -185,18 +185,24 @@ const Game &ThisGame() {
             {"BEST ", [](const Board &board) {
                  return Playing(board) ? std::to_string(Bcd(Word(board, kChainBest))) : std::string();
              }},
-            // (one line: the gauge, or while a hyper is on its level and the time it has left; the items held; the rank)
+            // (one line: the gauge, or while a hyper is on its level and the time it has left; the items held)
             {"HYPER", [](const Board &board) {
                  if (!Playing(board)) {
                      return std::string();
                  }
-                 const std::string rank = " RANK " + std::to_string(Word(board, kHyperRank));
                  if (Byte(board, kHyperOn)) {
                      return "ON LV" + std::to_string(Byte(board, kHyperLevel)) + " " +
-                            std::to_string(std::min(Word(board, kHyperLeft), kHyperFull) * 100 / kHyperFull) + "%" + rank;
+                            std::to_string(std::min(Word(board, kHyperLeft), kHyperFull) * 100 / kHyperFull) + "%";
                  }
                  return std::to_string(std::min(Word(board, kHyperGauge), kHyperFull) * 100 / kHyperFull) + "% x" +
-                        std::to_string(Byte(board, kHyperStock)) + rank;
+                        std::to_string(Byte(board, kHyperStock));
+             }},
+            // (the ranks and what they make of the enemies' fire: the bullets' speed, the game rank, the hyper rank)
+            {"RANK ", [](const Board &board) {
+                 return Playing(board) ? "SPEED " + std::to_string(Word(board, kBulletSpeed)) + " INTERVAL " +
+                                             std::to_string(Word(board, kGameRank)) + " HYPER " +
+                                             std::to_string(Word(board, kHyperRank))
+                                       : std::string();
              }},
             {"BEES ", [](const Board &board) {
                  return Playing(board) ? std::to_string(Word(board, kBees)) + "/10" : std::string();
@@ -213,9 +219,9 @@ const Game &ThisGame() {
              }},
         };
         g.readoutsWhat = "the most hits in a chain this game; the hyper gauge as a number (or, while a hyper is on, its "
-                         "level and the time it has left), the hyper items held and the hyper rank; the bees taken in "
-                         "this stage; and the second loop's terms (ships lost, bombs used, stages with all ten bees) as "
-                         "the game tests them";
+                         "level and the time it has left) and the hyper items held; the ranks (the bullets' speed, the "
+                         "game rank and the hyper rank); the bees taken in this stage; and the second loop's terms (ships "
+                         "lost, bombs used, stages with all ten bees) as the game tests them";
         return g;
     }();
     return game;

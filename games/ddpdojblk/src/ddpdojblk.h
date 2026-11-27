@@ -109,6 +109,13 @@ constexpr uint32_t kHyperStock = 0x81B65D;
 // The hyper rank (a word): raised by each hyper's level as it begins, and cut to a quarter when a ship is lost (the
 // loss's routine, 24A006). It speeds the enemies' bullets
 constexpr uint32_t kHyperRank = 0x81B646;
+// What the ranks make of the enemies' fire (found 2026-11-27 in the code that works them out each frame, and its
+// numbers watched through a hyper): the game rank (a word, 2608D2), the stage's own start (a table's byte for the
+// difficulty) and one more each 256 frames played, and while a hyper is on the hyper rank 16 times over; 240 at most
+// (255 in a hyper), set outright in the second loop. The bullets' speed (a word, 252BD0): from a table by the higher
+// of the players' hyper ranks (a quarter of it while no hyper is on), and more at some bosses; 8 at most (15 in the
+// second loop)
+constexpr uint32_t kGameRank = 0x81309E, kBulletSpeed = 0x812950;
 // A byte that is 1 while a hyper is on, and the time it has left (a word, from kHyperFull down to 0)
 constexpr uint32_t kHyperOn = 0x81B659;
 // The level of the hyper on now (a byte: the items used for it; 0 again as it ends)
