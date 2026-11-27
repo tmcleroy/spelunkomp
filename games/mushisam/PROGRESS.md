@@ -36,7 +36,7 @@ Everything by hand: nobody has played it or listened to it yet. The sound was on
 
 Start at stage (1-5), out of harm, endless bombs and ships (docs/TRAINING.md); the practice point, rewind and fast forward every game has. The facts are in src/mushisam.h.
 
-## Gadgets (M2-style panels, 2026-11-27)
+## Gadgets (panels beside the picture, 2026-11-27)
 
 Score and stage (for score by stage), the Maniac/Ultra counter (the "+N" under the ships: a graph and the number), the
 score items taken (100, 200 and 500 points) and the score the next extra ship comes at, all read from RAM; addresses and

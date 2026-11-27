@@ -231,10 +231,10 @@ reads each one's value now ("" hides it).
 | --- | --- |
 | Muchi Muchi Pork! | LARD: the lard meter as a number, out of 104 (the game draws only its bar) |
 
-## M2-style gadgets (runtime/game.h: Game::gadgets; port/gadgets.h)
+## Gadgets (runtime/game.h: Game::gadgets; port/gadgets.h)
 
-The feature "M2-style gadgets" (Training mode page, every game): framed panels in the space a stood-up picture leaves
-at its sides in a wide window, as M2's ports (Battle Garegga Rev.2016, ESP Ra.De. Psi, Ketsui Deathtiny) have them.
+The feature "Gadgets" (Training mode page, every game): framed panels in the space a stood-up picture leaves
+at its sides in a wide window.
 Drawn on a picture of their own a whole fraction of the window's size (about 360 lines, so each of its dots is a few
 of the window's pixels, sharp), laid over the window as the touch controls' layer is (those, while they show, come
 first: they want the same sides). Read from the board after each frame shown, never written to it: the game runs the

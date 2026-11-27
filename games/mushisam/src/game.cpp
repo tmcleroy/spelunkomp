@@ -115,7 +115,7 @@ const Game &ThisGame() {
         f.hitBoxes = HitBoxes;
         f.hitKinds |= 1u << HitBox::Ground | 1u << HitBox::Shot;
         Game g = shmup::MakeGame(mushisam::kCredits, f);
-        // (the M2-style gadgets, port/gadgets.h: the counter of Maniac and Ultra, the items taken, the next extra
+        // (the gadgets, port/gadgets.h: the counter of Maniac and Ultra, the items taken, the next extra
         // ship; and the score and stage, for the score by stage. No rank was found: see PROGRESS.md)
         using Kind = Gadget::Kind;
         g.gadgets = {

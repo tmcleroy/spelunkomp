@@ -874,7 +874,7 @@ int main(int argc, char **argv) {
     std::vector<uint32_t> touchPicture;
     int touchW = 0, touchH = 0;
     SDL_Texture *touchTexture = nullptr; // (with SDL's renderer: the window layer, the touch controls' or the gadgets')
-    // The M2-style gadgets (port/gadgets.h): in the window layer's place while the touch controls show nothing.
+    // The gadgets (port/gadgets.h): in the window layer's place while the touch controls show nothing.
     // gadgetsStale: their picture to be handed on at the next present; layerIsGadgets: what the layer shows now
     port::Gadgets gadgets;
     bool gadgetsStale = false, layerIsGadgets = false;
@@ -3433,7 +3433,7 @@ int main(int argc, char **argv) {
                 auto on = [&](const char *name) { return FeatureIndex(name) < features.size() && features[FeatureIndex(name)] != 0; };
                 netScreen.Match(hud, *net, localIn, on("online_ping"), on("online_delay"), on("online_hide_names"), tick, frameCount);
             }
-            // (the M2-style gadgets beside the picture: port/gadgets.h)
+            // (the gadgets beside the picture: port/gadgets.h)
             if (const size_t at = FeatureIndex("gadgets"); at < features.size() && features[at]) {
                 int ow = 0, oh = 0;
                 SDL_GetWindowSizeInPixels(window, &ow, &oh);

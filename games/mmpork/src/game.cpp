@@ -213,7 +213,7 @@ const Game &ThisGame() {
                            return lard <= mmpork::kLardFull ? std::to_string(lard) + "/" + std::to_string(mmpork::kLardFull) : std::string();
                        }}};
         g.readoutsWhat = "the lard meter as a number (104 full)";
-        // (the M2-style gadgets, port/gadgets.h: what wnka's MAME layout for the game shows)
+        // (the gadgets, port/gadgets.h: what wnka's MAME layout for the game shows)
         using Kind = Gadget::Kind;
         g.gadgets = {
             {"RANK", Kind::Graph,

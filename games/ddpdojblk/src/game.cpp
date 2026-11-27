@@ -218,7 +218,7 @@ const Game &ThisGame() {
                         std::to_string(bees) + "/3 " + (on ? "OK" : "OUT");
              }},
         };
-        // (the M2-style gadgets, port/gadgets.h: the ranks over time and as meters, the chain's and the hyper's gauges,
+        // (the gadgets, port/gadgets.h: the ranks over time and as meters, the chain's and the hyper's gauges,
         // the second loop's terms; and the score, for the score by stage)
         using Kind = Gadget::Kind;
         g.gadgets = {

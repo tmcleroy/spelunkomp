@@ -140,7 +140,7 @@ const Game &ThisGame() {
         f.hitBoxes = HitBoxes;
         f.hitKinds |= 1u << HitBox::Ground | 1u << HitBox::Shot;
         Game g = shmup::MakeGame(ddonpach::kCredits, f);
-        // (the M2-style gadgets, port/gadgets.h: the rank over time, the chain's timer, the bees, the second loop's test;
+        // (the gadgets, port/gadgets.h: the rank over time, the chain's timer, the bees, the second loop's test;
         // and the score and stage, for the score by stage)
         using Kind = Gadget::Kind;
         g.gadgets = {

@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // Copyright (C) 2026 Tommy McLeroy. Part of spelunkomp.
-// The feature "M2-style gadgets": framed panels in the space the picture leaves at its sides in a wide window, as M2's
-// ports of arcade shooting games (Battle Garegga Rev.2016, ESP Ra.De. Psi, Ketsui Deathtiny) have them: the game's
+// The feature "Gadgets": framed panels in the space the picture leaves at its sides in a wide window: the game's
 // hidden counters as numbers, meters and a graph over time (the rank graph), the score each stage made, the controls
 // held. Drawn on a picture of its own a whole fraction of the window's size (about 360 lines, so a dot is a few of the
 // window's pixels and sharp, as the board's own picture is), laid over the whole window by whichever draws it, in the
@@ -301,7 +300,7 @@ private:
         if (y + h > most) {
             return 0; // (no room left on this side)
         }
-        // (the frame: a dark panel, its title on a band, M2's way)
+        // (the frame: a dark panel, its title on a band)
         Box(x - 1, y - 1, w + 2, h + 2, 0xFF6A5A48u);
         Box(x, y, w, h, 0xD8180F0Au);
         Box(x, y, w, kHeader, 0xF0583C24u);
