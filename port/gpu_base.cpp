@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // Copyright (C) 2026 Tommy McLeroy. Part of spelunkomp.
+#include "keep_awake.h"
 #include "gpu_base.h"
 
 #include "shaders.inc"
@@ -336,11 +337,43 @@ void *GpuBase::MapUpload(uint32_t size) {
     return base ? base + m_uploadOffset : nullptr;
 }
 
+// (the GPU's waits, timed; SPELUNK_KEEP_AWAKE=2: spun, port/keep_awake.h)
+void GpuBase::WaitFence(SDL_GPUFence *fence) {
+    const uint64_t from = awake::NowNs();
+    if (awake::Mode() >= 2) {
+        awake::SpinWhile([&]() { return SDL_QueryGPUFence(m_device, fence); });
+    } else {
+        SDL_WaitForGPUFences(m_device, true, &fence, 1);
+    }
+    awake::g_waits.fences += awake::NowNs() - from;
+}
+bool GpuBase::AcquireSwapchain(SDL_GPUCommandBuffer *cmd, SDL_GPUTexture **swapchain, Uint32 *w, Uint32 *h) {
+    const uint64_t from = awake::NowNs();
+    bool ok = false;
+    // (a window not shown gives no texture and never will, without waiting: the ordinary acquire for it)
+    const bool shown = !(SDL_GetWindowFlags(m_window) & (SDL_WINDOW_HIDDEN | SDL_WINDOW_MINIMIZED | SDL_WINDOW_OCCLUDED));
+    if (awake::Mode() >= 2 && shown) {
+        // (the acquire that does not wait, tried until it gives a texture; after 100 ms, the one that waits)
+        const uint64_t giveUp = from + 100000000ull;
+        awake::SpinWhile([&]() {
+            ok = SDL_AcquireGPUSwapchainTexture(cmd, m_window, swapchain, w, h);
+            return !ok || *swapchain != nullptr || awake::NowNs() >= giveUp;
+        });
+        if (ok && !*swapchain) {
+            ok = SDL_WaitAndAcquireGPUSwapchainTexture(cmd, m_window, swapchain, w, h);
+        }
+    } else {
+        ok = SDL_WaitAndAcquireGPUSwapchainTexture(cmd, m_window, swapchain, w, h);
+    }
+    awake::g_waits.acquire += awake::NowNs() - from;
+    return ok;
+}
+
 void GpuBase::EndFrame(SDL_GPUCommandBuffer *cmd) {
     SDL_GPUFence *fence = SDL_SubmitGPUCommandBufferAndAcquireFence(cmd);
     SDL_GPUFence *&before = m_frameFences[m_frameAt];
     if (before) {
-        SDL_WaitForGPUFences(m_device, true, &before, 1);
+        WaitFence(before);
         SDL_ReleaseGPUFence(m_device, before);
     }
     before = fence;
@@ -363,7 +396,7 @@ void GpuBase::SubmitWork(SDL_GPUCommandBuffer *cmd) {
     }
     SDL_GPUFence *fence = SDL_SubmitGPUCommandBufferAndAcquireFence(cmd);
     if (m_workFence) {
-        SDL_WaitForGPUFences(m_device, true, &m_workFence, 1);
+        WaitFence(m_workFence);
         SDL_ReleaseGPUFence(m_device, m_workFence);
     }
     m_workFence = fence;
@@ -530,7 +563,7 @@ void GpuBase::Present(SDL_GPUGraphicsPipeline *pipeline, SDL_GPUTexture *texture
     Uint32 sw = 0, sh = 0;
     // (no window of its own: the picture goes through a shader, port/shading.h; or none to show it in, hidden or
     // minimised: SDL then gives no picture, and does not wait)
-    if (m_window && SDL_WaitAndAcquireGPUSwapchainTexture(cmd, m_window, &swapchain, &sw, &sh) && swapchain) {
+    if (m_window && AcquireSwapchain(cmd, &swapchain, &sw, &sh) && swapchain) {
         const SDL_FRect whole{0, 0, static_cast<float>(sw), static_cast<float>(sh)};
         Draw(cmd, swapchain, true, pipeline, texture, params, &to, overlay, &whole);
     }

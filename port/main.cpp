@@ -20,6 +20,7 @@
 //
 // Input lag (docs/LAG.md): the host's devices are read when the game reads its ports (once a frame, in its vertical
 // sync interrupt), not at the top of the host's loop, and each frame is shown as soon as it is done.
+#include "keep_awake.h"
 #include "../machine/board.h"
 #include "../machine/zip.h"
 #include "../recomp-common/arcade_screen.h"
@@ -1288,6 +1289,7 @@ int main(int argc, char **argv) {
         bool keptNow = false; // (this frame: its first frame ahead taken)
     } aheadKept;
     const bool aheadTimes = getenv("SPELUNK_AHEAD_TIMES") != nullptr;
+    uint64_t fpsShownForWaits = 0; // (the frames shown, for the waits' times a frame: port/keep_awake.h)
     // (the frames ahead let go, the board being made anew or given another state: nothing put back)
     auto aheadForget = [&]() {
         for (const AheadKept::Frame &f : aheadKept.frames) {
@@ -3207,6 +3209,7 @@ int main(int argc, char **argv) {
         }
         presentPicture();
         fpsFrames++;
+        fpsShownForWaits++;
         if (const uint64_t now = SDL_GetTicksNS(); now - fpsFrom >= 500000000ull) {
             fpsRate = fpsFrames * 1e9 / static_cast<double>(now - fpsFrom);
             fpsFrom = now;
@@ -3343,7 +3346,7 @@ int main(int argc, char **argv) {
         next += fast ? frameTime / 6 : frameTime * rate.ticks / rate.frames;
         const auto now = std::chrono::steady_clock::now();
         if (next > now) {
-            std::this_thread::sleep_until(next);
+            awake::PaceUntil(next); // (port/keep_awake.h: slept, or spun, SPELUNK_KEEP_AWAKE)
         } else if (now - next > frameTime * 4) {
             next = now; // (fell behind: start again from now)
         }
@@ -3377,6 +3380,12 @@ int main(int argc, char **argv) {
     if (!aheadKept.frames.empty()) {
         hw.NetBack(aheadKept.frames.front().place); // (the game's own frame, for what is said and kept at the end)
         aheadForget();
+    }
+    if (aheadTimes) {
+        const double shown = static_cast<double>(std::max<uint64_t>(fpsShownForWaits, 1));
+        printf("waits: SPELUNK_KEEP_AWAKE=%d, a frame shown (%llu): the frame pacing %.2f ms, the swapchain's acquire %.2f ms, "
+               "the GPU's fences %.2f ms\n", awake::Mode(), static_cast<unsigned long long>(fpsShownForWaits),
+               awake::g_waits.pacing / 1e6 / shown, awake::g_waits.acquire / 1e6 / shown, awake::g_waits.fences / 1e6 / shown);
     }
     if (aheadKept.kept + aheadKept.again) {
         printf("run-ahead: %llu frames kept, %llu run again\n", static_cast<unsigned long long>(aheadKept.kept),
