@@ -5,6 +5,7 @@
 #include "ddpdojblk.h"
 
 #include <algorithm>
+#include <string>
 
 namespace spelunk {
 
@@ -12,6 +13,23 @@ namespace {
     int Word(const Board &board, uint32_t address) {
         const size_t mask = board.ram.size() - 1;
         return (board.ram[address & mask] << 8) | board.ram[(address + 1) & mask];
+    }
+    // A byte of work RAM, and a word kept in BCD (the game's counters as it shows them) as a number
+    int Byte(const Board &board, uint32_t address) {
+        return board.ram[address & (board.ram.size() - 1)];
+    }
+    int Bcd(int bcd) {
+        int n = 0, scale = 1;
+        for (; bcd; bcd >>= 4, scale *= 10) {
+            n += (bcd & 15) * scale;
+        }
+        return n;
+    }
+    // While a player's game is played (not the attract show's demonstration, nor the title or the logos after one,
+    // whose memory still holds its last game's): the readouts and the hidden bees show nothing otherwise
+    bool Playing(const Board &board) {
+        using namespace ddpdojblk;
+        return Word(board, kMode) == kModePlayed && !Word(board, kDemoInputs) && !Word(board, kDemoInputs + 2);
     }
     // The boxes the game's hit test (244D62) uses, read as it reads them
     void HitBoxes(const Board &board, std::vector<HitBox> &out) {
@@ -104,6 +122,34 @@ namespace {
                 box(ship, HitBox::Ship);
             }
         }
+        // The hidden bees: on the screen (or coming down onto it), a line through each along the board's row (up and
+        // down the picture as it stands), one along its column once it is on, and a box about it
+        auto bees = [&](uint32_t from, int slots) {
+            if (!Playing(board)) {
+                return;
+            }
+            for (int n = 0; n < slots; n++) {
+                const uint32_t at = from + static_cast<uint32_t>(n) * kEnemySize;
+                if (!(Word(board, at) & 0x8000)) {
+                    continue;
+                }
+                const uint32_t picture = static_cast<uint32_t>(Word(board, at + kPicture)) << 16 | Word(board, at + kPicture + 2);
+                if (picture != kBeePicture && picture != kBeePictureLit) {
+                    continue;
+                }
+                const float x = static_cast<int16_t>(Word(board, at + kX)) / 64.0f, y = static_cast<int16_t>(Word(board, at + kY)) / 64.0f;
+                if (y < 0 || y >= 224 || x < 0 || x >= 448 + 64) {
+                    continue;
+                }
+                out.push_back({0, y - 0.5f, 448, y + 0.5f, HitBox::Hidden});
+                if (x < 448) {
+                    out.push_back({x - 0.5f, 0, x + 0.5f, 224, HitBox::Hidden});
+                    out.push_back({x - 6, y - 6, x + 6, y + 6, HitBox::Hidden});
+                }
+            }
+        };
+        bees(kEnemies, kAirSlots);
+        bees(kGroundEnemies, kGroundSlots);
     }
 } // namespace
 
@@ -129,8 +175,54 @@ const Game &ThisGame() {
         f.safeFramesBytes = 1;
         f.bossWord = ddpdojblk::kBossOn;
         f.hitBoxes = HitBoxes;
-        f.hitKinds |= 1u << HitBox::Ground | 1u << HitBox::Shot;
-        return shmup::MakeGame(ddpdojblk::kCredits, f);
+        f.hitKinds |= 1u << HitBox::Ground | 1u << HitBox::Shot | 1u << HitBox::Hidden;
+        Game g = shmup::MakeGame(ddpdojblk::kCredits, f);
+        // (the scoring readouts: what the game keeps and does not show)
+        using namespace ddpdojblk;
+        g.readouts = {
+            // (the game shows the chain's hits, the hyper gauge as its bar and the hyper items held itself: the most hits
+            // in a chain and the gauge as a number it does not)
+            {"BEST ", [](const Board &board) {
+                 return Playing(board) ? std::to_string(Bcd(Word(board, kChainBest))) : std::string();
+             }},
+            // (one line: the gauge, or while a hyper is on its level and the time it has left; the items held)
+            {"HYPER", [](const Board &board) {
+                 if (!Playing(board)) {
+                     return std::string();
+                 }
+                 if (Byte(board, kHyperOn)) {
+                     return "ON LV" + std::to_string(Byte(board, kHyperLevel)) + " " +
+                            std::to_string(std::min(Word(board, kHyperLeft), kHyperFull) * 100 / kHyperFull) + "%";
+                 }
+                 return std::to_string(std::min(Word(board, kHyperGauge), kHyperFull) * 100 / kHyperFull) + "% x" +
+                        std::to_string(Byte(board, kHyperStock));
+             }},
+            // (the ranks and what they make of the enemies' fire: the bullets' speed, the game rank, the hyper rank)
+            {"RANK ", [](const Board &board) {
+                 return Playing(board) ? "SPEED " + std::to_string(Word(board, kBulletSpeed)) + " INTERVAL " +
+                                             std::to_string(Word(board, kGameRank)) + " HYPER " +
+                                             std::to_string(Word(board, kHyperRank))
+                                       : std::string();
+             }},
+            {"BEES ", [](const Board &board) {
+                 return Playing(board) ? std::to_string(Word(board, kBees)) + "/10" : std::string();
+             }},
+            // (the second loop's terms as the game tests them at the first's end, while the first is played)
+            {"LOOP2", [](const Board &board) {
+                 if (!Playing(board) || Word(board, kStage) >= 5) {
+                     return std::string();
+                 }
+                 const int lost = Word(board, kShipsLost), bombs = Word(board, kBombsUsed), bees = Word(board, kBeeStages) / 4;
+                 const bool on = !Word(board, kContinued) && (lost <= 2 || bombs <= 3 || bees >= 3);
+                 return "MISS " + std::to_string(lost) + "/2 BOMB " + std::to_string(bombs) + "/3 BEE " +
+                        std::to_string(bees) + "/3 " + (on ? "OK" : "OUT");
+             }},
+        };
+        g.readoutsWhat = "the most hits in a chain this game; the hyper gauge as a number (or, while a hyper is on, its "
+                         "level and the time it has left) and the hyper items held; the ranks (the bullets' speed, the "
+                         "game rank and the hyper rank); the bees taken in this stage; and the second loop's terms (ships "
+                         "lost, bombs used, stages with all ten bees) as the game tests them";
+        return g;
     }();
     return game;
 }

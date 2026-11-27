@@ -10,6 +10,17 @@ Versions follow [Semantic Versioning](https://semver.org/).
   frame one frame's work instead of three. The same frames, picture and sound. SaiDaiOuJou's boss on a Steam Machine
   at run-ahead 2 with the stick moving: from 60 to 70 frames late a minute to 2 or 3, the slowest 5% of frames from
   15.5 to 5.9 ms; Muchi Muchi Pork's from 154 to 53. SPELUNK_NO_AHEAD_EARLY=1 turns it off.
+- **DoDonPachi Dai-Ou-Jou Black Label's scoring readouts**, what the game keeps and does not show: the most hits in a
+  chain, the hyper gauge as a number (or, while a hyper is on, its level and the time it has left) with the hyper items
+  held, the ranks as the game works them out (the bullets' speed, the game rank that sets their interval, the hyper
+  rank), the bees taken in the stage, and the second loop's terms as the game tests them at the first
+  loop's end (ships lost, bombs used, stages with all ten bees, no continue). Read from the game's memory while a stage
+  is played, on the Training mode page.
+- **Scoring readouts on the left or the right**: the switch is a choice of side (Off, Left, Right), so a game's own
+  counters on one side stay clear. A settings file from before means the same (on is Left).
+- **Hidden items, a kind of hit box**: where something a game hides is before it is found, as faint lines across the
+  picture meeting there. Dai-Ou-Jou Black Label's hidden bees, read from its enemies' records as the stage puts them
+  there: every stage and loop. On the Hit boxes page, its own colour or hidden, like the other kinds.
 
 ## 0.5.0-beta.1
 

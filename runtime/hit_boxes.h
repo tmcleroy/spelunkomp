@@ -43,6 +43,10 @@ inline const KindInfo &Kind(HitBox::Kind kind) {
          "Enemies the shots can hurt whose bodies never touch the ship (tanks, turrets, things on the ground): where to "
          "shoot them.",
          4},
+        {"hit_box_hidden", "Hidden items",
+         "Where each thing the game hides is (a secret bonus), before it is found: faint lines across the picture "
+         "meeting there.",
+         3},
     };
     return kinds[kind];
 }
@@ -94,6 +98,7 @@ inline bool Style(HitBox::Kind kind, int choice, uint32_t &fill, uint32_t &edge)
     case HitBox::Ship: fill = 0xC0000000u | rgb, edge = 0xFF000000u; break;     // (solid, a black edge)
     case HitBox::Bullet: fill = 0xFF000000u | rgb, edge = 0xFFFFFFFFu; break;   // (solid, a white edge)
     case HitBox::Shot: fill = 0x60000000u | rgb, edge = 0xD0000000u | rgb; break;
+    case HitBox::Hidden: fill = 0x60000000u | rgb, edge = 0x90000000u | rgb; break; // (faint: lines across the picture)
     default: fill = 0x50000000u | rgb, edge = 0xE0000000u | rgb; break;           // (the bodies: see-through)
     }
     return true;

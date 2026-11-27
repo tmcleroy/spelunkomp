@@ -3369,12 +3369,14 @@ int main(int argc, char **argv) {
             if (hitBoxesAt < features.size() && features[hitBoxesAt] && ThisGame().hitBoxes) {
                 MarkHitBoxes(hud, *board, turnNow(), features);
             }
-            // (the scoring readouts: the game's hidden counters, down the left side, under the tools' notes)
+            // (the scoring readouts: the game's hidden counters, down the left side (1) or the right (2), under the
+            // tools' notes and the FPS)
             if (const size_t at = FeatureIndex("readouts"); at < features.size() && features[at]) {
+                const bool right = features[at] == 2;
                 float y = 0.10f;
                 for (const Readout &r : ThisGame().readouts) {
                     if (const std::string value = r.value(*board); !value.empty()) {
-                        hud.Text(0.015f, y, -1, std::string(r.name) + " " + value, 0xFFFFFFFFu);
+                        hud.Text(right ? 0.985f : 0.015f, y, right ? 1 : -1, std::string(r.name) + " " + value, 0xFFFFFFFFu);
                         y += compactMenu() ? 0.06f : 0.045f; // (the large letters' rows: compactMenu)
                     }
                 }
