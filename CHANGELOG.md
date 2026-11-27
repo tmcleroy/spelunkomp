@@ -5,6 +5,10 @@ Versions follow [Semantic Versioning](https://semver.org/).
 
 ## Unreleased
 
+- **The board's slowdown worked out faster**: each translated piece of the game's code keeps what its memory costs
+  the first time it runs, so the model no longer looks it up every time (docs/SLOWDOWN.md). SaiDaiOuJou's busiest
+  scene about 8% faster on an Apple M4, and the same frames and slowdown as before.
+
 ## 0.5.0-beta.1
 
 Faster again, above all with run-ahead: the processor kept at speed between frames, run-ahead keeping only the
