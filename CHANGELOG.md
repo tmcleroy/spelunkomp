@@ -5,6 +5,11 @@ Versions follow [Semantic Versioning](https://semver.org/).
 
 ## Unreleased
 
+- **Scene export** (Game > Scene export, Shift+F12; Ctrl+F12 a clip of 3, 5 or 10 seconds): the picture taken apart,
+  each of the board's layers by itself as a see-through PNG (Cave's 68000 board: its tile layers and sprites by
+  priority; the PGM: the sprites behind, the background, the sprites, the text; the CV1000: the frame's draws in the
+  order the game made them), each sprite by itself, and the hit boxes and readouts as layers of their own, in
+  cps2recomp's files: the launcher's Open diorama shows them in 3D (docs/FEATURES.md, Scene export).
 - **Processor between frames**, on the Game page: the processor kept from turning its clock down while the program
   waits for the next frame, which on a Steam Machine let it fall from 4.8 to 3.7 GHz in play. Light (the default)
   spends the last 3 ms of each wait busy, Full all of it (more power and battery); with run-ahead at 2 frames or more,

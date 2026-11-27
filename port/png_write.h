@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // Copyright (C) 2026 Tommy McLeroy. Part of spelunkomp; from cps2recomp.
 //
-// Minimal PNG writer (RGB, zlib) for screenshots.
+// Minimal PNG writer (RGB, or RGBA: the scene export's layers, zlib) for screenshots.
 #pragma once
 
 #include <cstdint>
@@ -9,22 +9,27 @@
 #include <vector>
 #include <zlib.h>
 
-// pixels: little-endian XBGR8888 (bytes R, G, B, X), as the Saturn software renderer produces.
-inline bool WritePng(const char *path, const uint32_t *pixels, uint32_t w, uint32_t h) {
-    std::vector<uint8_t> raw(static_cast<size_t>(w * 3 + 1) * h);
+// pixels: little-endian XBGR8888 (bytes R, G, B, X), as the Saturn software renderer produces; with `alpha`, ABGR8888,
+// the top byte how solid the pixel is. `level`: zlib's, 1 (fastest) to 9.
+inline bool WritePng(const char *path, const uint32_t *pixels, uint32_t w, uint32_t h, bool alpha = false, int level = 6) {
+    const uint32_t bytes = alpha ? 4 : 3;
+    std::vector<uint8_t> raw(static_cast<size_t>(w * bytes + 1) * h);
     for (uint32_t y = 0; y < h; y++) {
-        uint8_t *row = raw.data() + static_cast<size_t>(y) * (w * 3 + 1);
+        uint8_t *row = raw.data() + static_cast<size_t>(y) * (w * bytes + 1);
         row[0] = 0;
         for (uint32_t x = 0; x < w; x++) {
             const uint32_t p = pixels[static_cast<size_t>(y) * w + x];
-            row[1 + x * 3] = static_cast<uint8_t>(p);
-            row[2 + x * 3] = static_cast<uint8_t>(p >> 8);
-            row[3 + x * 3] = static_cast<uint8_t>(p >> 16);
+            row[1 + x * bytes] = static_cast<uint8_t>(p);
+            row[2 + x * bytes] = static_cast<uint8_t>(p >> 8);
+            row[3 + x * bytes] = static_cast<uint8_t>(p >> 16);
+            if (alpha) {
+                row[4 + x * bytes] = static_cast<uint8_t>(p >> 24);
+            }
         }
     }
     uLongf zSize = compressBound(raw.size());
     std::vector<uint8_t> z(zSize);
-    compress2(z.data(), &zSize, raw.data(), raw.size(), 6);
+    compress2(z.data(), &zSize, raw.data(), raw.size(), level);
 
     FILE *f = fopen(path, "wb");
     if (!f) {
@@ -53,7 +58,7 @@ inline bool WritePng(const char *path, const uint32_t *pixels, uint32_t w, uint3
                               static_cast<uint8_t>(w >> 8),  static_cast<uint8_t>(w),
                               static_cast<uint8_t>(h >> 24), static_cast<uint8_t>(h >> 16),
                               static_cast<uint8_t>(h >> 8),  static_cast<uint8_t>(h),
-                              8, 2, 0, 0, 0};
+                              8, static_cast<uint8_t>(alpha ? 6 : 2), 0, 0, 0};
     chunk("IHDR", ihdr, 13);
     chunk("IDAT", z.data(), static_cast<uint32_t>(zSize));
     chunk("IEND", nullptr, 0);

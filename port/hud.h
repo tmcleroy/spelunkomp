@@ -142,6 +142,25 @@ public:
         m_toH = height;
         return true;
     }
+    // What is written this frame without the marks and the note (the scene export's readout layer, port/scene.h: the
+    // note is what the port says, as "SCENE SAVED"), drawn again into `out`, this picture's size, see-through where
+    // nothing is written. The picture itself is left as it is.
+    void WordsPicture(std::vector<uint32_t> &out) {
+        out.assign(pixels.size(), 0);
+        std::vector<MarkBox> marks;
+        marks.swap(m_marks);
+        std::string note;
+        note.swap(m_note);
+        const std::string before = m_wordsBefore;
+        m_wordsBefore = "\x01"; // (drawn again)
+        out.swap(pixels);
+        Changed();
+        out.swap(pixels);
+        m_wordsBefore = before;
+        marks.swap(m_marks);
+        note.swap(m_note);
+        m_to = pixels.data();
+    }
     // Blended into a picture of the same size (the software path)
     void Over(uint32_t *picture) const {
         for (size_t i = 0; i < pixels.size(); i++) {

@@ -64,7 +64,30 @@ public:
 
     void Serialize(Archive &ar);
 
+    // The picture taken apart (the scene export, port/scene.h), from the layers as they are now and the sprites on
+    // show: at each pixel the background's colour, the frontmost sprite's (the first in the list drawn there: the chip
+    // draws no later sprite over it, in front of the background or not) with whether it goes behind the background and
+    // which sprite it is, and the text's; 0 where there is none (colours red in the low byte, 0xFF in the top)
+    struct Split {
+        std::vector<uint32_t> background, sprites, text;
+        std::vector<uint8_t> spriteBehind;
+        std::vector<int32_t> spriteEntry;
+        uint32_t backdrop = 0;
+    };
+    void SplitFrame(Split &out);
+    // One of the sprites on show drawn alone, in the box of the screen it covers (false: none of it is on the screen)
+    bool SpriteAlone(size_t which, int &x, int &y, int &w, int &h, std::vector<uint32_t> &pixels);
+
 private:
+    // (while a split is made: where each pixel's parts are noted, by palette index; 0xFFFF none)
+    struct Noted {
+        std::vector<uint16_t> background, sprites, text;
+        std::vector<uint8_t> spriteBehind;
+        std::vector<int32_t> spriteEntry;
+    };
+    Noted *m_noted = nullptr;
+    int32_t m_entry = -1;
+    void Colours(const Noted &noted, Split &out) const;
     std::vector<uint16_t> m_indices; // the picture as palette indices
     std::vector<uint8_t> m_priority;
     uint32_t m_aoffset = 0, m_boffset = 0;

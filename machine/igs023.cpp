@@ -141,6 +141,12 @@ void Igs023::DrawPixel(int x, int pri, uint16_t *dest, uint8_t *destPri, uint16_
     if (x < 0 || x >= kWidth) {
         return;
     }
+    if (m_noted && !(destPri[x] & 1)) {
+        const size_t i = static_cast<size_t>(dest - m_indices.data()) + static_cast<size_t>(x);
+        m_noted->sprites[i] = value;
+        m_noted->spriteBehind[i] = pri != 0;
+        m_noted->spriteEntry[i] = m_entry;
+    }
     if (!(destPri[x] & 1) && (!pri || !(destPri[x] & 2))) {
         dest[x] = value;
     }
@@ -271,6 +277,9 @@ void Igs023::Draw(uint32_t *out) {
                     const size_t i = static_cast<size_t>(y) * kWidth + x;
                     m_indices[i] = static_cast<uint16_t>(0x400 + ((attr & 0x3E) >> 1) * 32 + pixel);
                     m_priority[i] = 2;
+                    if (m_noted) {
+                        m_noted->background[i] = m_indices[i];
+                    }
                 }
             }
         }
@@ -281,6 +290,7 @@ void Igs023::Draw(uint32_t *out) {
             if ((ctrl & 0x2000) && !shown[n].pri) {
                 continue;
             }
+            m_entry = static_cast<int32_t>(n);
             DrawSprite(shown[n]);
         }
     }
@@ -303,6 +313,9 @@ void Igs023::Draw(uint32_t *out) {
                 const uint32_t pixel = (tiles[code * 32 + py * 4 + (px >> 1)] >> ((px & 1) * 4)) & 15;
                 if (pixel != 15) {
                     m_indices[static_cast<size_t>(y) * kWidth + x] = static_cast<uint16_t>(0x800 + ((attr & 0x3E) >> 1) * 16 + pixel);
+                    if (m_noted) {
+                        m_noted->text[static_cast<size_t>(y) * kWidth + x] = m_indices[static_cast<size_t>(y) * kWidth + x];
+                    }
                 }
             }
         }
@@ -310,6 +323,78 @@ void Igs023::Draw(uint32_t *out) {
     for (size_t i = 0; i < m_indices.size(); i++) {
         out[i] = Colour(paletteRam[m_indices[i] % 0xA00]);
     }
+}
+
+void Igs023::Colours(const Noted &noted, Split &out) const {
+    auto colours = [&](const std::vector<uint16_t> &from, std::vector<uint32_t> &to) {
+        to.assign(from.size(), 0);
+        for (size_t i = 0; i < from.size(); i++) {
+            if (from[i] != 0xFFFF) {
+                to[i] = Colour(paletteRam[from[i] % 0xA00]) | 0xFF000000u;
+            }
+        }
+    };
+    colours(noted.background, out.background);
+    colours(noted.sprites, out.sprites);
+    colours(noted.text, out.text);
+    out.spriteBehind = noted.spriteBehind;
+    out.spriteEntry = noted.spriteEntry;
+    out.backdrop = Colour(paletteRam[0x3FF % 0xA00]) & 0xFFFFFFu;
+}
+
+void Igs023::SplitFrame(Split &out) {
+    const size_t size = static_cast<size_t>(kWidth) * kHeight;
+    Noted noted{std::vector<uint16_t>(size, 0xFFFF), std::vector<uint16_t>(size, 0xFFFF), std::vector<uint16_t>(size, 0xFFFF),
+                std::vector<uint8_t>(size, 0), std::vector<int32_t>(size, -1)};
+    std::vector<uint32_t> picture(size);
+    m_noted = &noted;
+    Draw(picture.data());
+    m_noted = nullptr;
+    m_entry = -1;
+    Colours(noted, out);
+}
+
+bool Igs023::SpriteAlone(size_t which, int &x, int &y, int &w, int &h, std::vector<uint32_t> &pixels) {
+    if (which >= shown.size() || spritePixels.empty() || spriteMasks.empty()) {
+        return false;
+    }
+    const size_t size = static_cast<size_t>(kWidth) * kHeight;
+    Noted noted{{}, std::vector<uint16_t>(size, 0xFFFF), {}, std::vector<uint8_t>(size, 0), std::vector<int32_t>(size, -1)};
+    m_indices.assign(size, 0x3FF);
+    m_priority.assign(size, 0);
+    m_noted = &noted;
+    m_entry = 0;
+    DrawSprite(shown[which]);
+    m_noted = nullptr;
+    m_entry = -1;
+    int x0 = kWidth, y0 = kHeight, x1 = -1, y1 = -1;
+    for (int py = 0; py < kHeight; py++) {
+        for (int px = 0; px < kWidth; px++) {
+            if (noted.spriteEntry[static_cast<size_t>(py) * kWidth + px] >= 0) {
+                x0 = std::min(x0, px);
+                x1 = std::max(x1, px);
+                y0 = std::min(y0, py);
+                y1 = std::max(y1, py);
+            }
+        }
+    }
+    if (x1 < 0) {
+        return false;
+    }
+    x = x0;
+    y = y0;
+    w = x1 - x0 + 1;
+    h = y1 - y0 + 1;
+    pixels.assign(static_cast<size_t>(w) * h, 0);
+    for (int py = y0; py <= y1; py++) {
+        for (int px = x0; px <= x1; px++) {
+            const size_t i = static_cast<size_t>(py) * kWidth + px;
+            if (noted.spriteEntry[i] >= 0) {
+                pixels[static_cast<size_t>(py - y0) * w + px - x0] = Colour(paletteRam[noted.sprites[i] % 0xA00]) | 0xFF000000u;
+            }
+        }
+    }
+    return true;
 }
 
 void Igs023::Serialize(Archive &ar) {

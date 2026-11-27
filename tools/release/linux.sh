@@ -63,6 +63,8 @@ for program in "$STAGE/$EXE-launcher" $(for game in $GAMES; do echo "$STAGE/$gam
 done
 add_notices "$STAGE" "$BUILD/launcher"
 add_librashader "$STAGE" librashader.so "$STAGE" "$STAGE/licenses"
+# (the launcher's Tools: the scene diorama, tools/diorama)
+cp "$ROOT/tools/diorama/diorama.html" "$STAGE/"
 if [ "${PGO_GENERATE:-}" = 1 ]; then
     # (the instrumented programs are for training only, never a release: with the script that plays them on the
     # device and each game's ROM set and title frame, into their own archive; no manifest)

@@ -33,4 +33,6 @@ cmake -S . -B "$B/build" -G Ninja -DGAME="$(basename "$(dirname "$(ls games/*/ga
     -DCMAKE_BUILD_TYPE=Release > /dev/null
 ninja -C "$B/build" spelunkomp-launcher > /dev/null
 cp -p "$B/build/spelunkomp-launcher" "$B/"
+# (the launcher's Tools: the scene diorama beside the programs, tools/diorama)
+cp tools/diorama/diorama.html "$B/"
 echo "built $B/spelunkomp-launcher"

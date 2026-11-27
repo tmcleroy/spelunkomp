@@ -110,6 +110,9 @@ The games' names are their owners' trademarks.
 - **Attract mode**: the game's own show on a loop, as a cabinet nobody is playing.
 - **The board's settings and autofire**: a game's own test-menu settings (difficulty, lives, extends) on a Board page,
   without the test menu, and autofire for each button at 30, 20 or 15 shots a second, online too.
+- **Scene export**: any moment of any game saved as its layers, each a see-through PNG (the tile layers and the sprites
+  by priority; the CV1000's draws in the order the game made them), or a few seconds of them, to open in 3D in the scene
+  diorama ([more](docs/FEATURES.md#scene-export)).
 - Free play, straight to the title, save states, faster play (up to 8x).
 
 <p align="center">
@@ -174,6 +177,7 @@ Please don't attach ROM sets, save states or anything else from the game.
 | Set the practice point, back to it, replay | `\`, Backspace, `]` | right shoulder, left shoulder, right stick click |
 | Rewind (hold), fast forward (hold) | R, Tab | left trigger, right trigger |
 | Full screen | F11 | |
+| Screenshot, save scene, record a scene clip | F12, Shift+F12, Ctrl+F12 | (the menu) |
 
 The first two gamepads are players 1 and 2. Everything can be remapped on the launcher's Controllers page.
 
