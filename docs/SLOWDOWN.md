@@ -562,6 +562,22 @@ the model's every field. The first difference stops the run; the run goes on fro
 boss state, 600 frames: 14,878 skips of 99 million turns, every one the same, and the per-frame hash log identical to
 origin/main's.
 
+### The translated sites' plans
+
+Most of the model's time at a busy scene went to finding a path (Sh3Paths: a hash, a set's two places, the stale
+check; and with 8,192 places for the 19,000 or so paths a boss streams, finding it again). A translated block knows
+its sites, the data accesses and the branches taken in it, so each keeps its own (SitePlans, machine/sh3.h): the first
+time a site's event takes the generic path, its plan is made (StreamNew's own way, Sh3Timing::MakePath) and kept in
+the block's translation, in the site's slot, found from the instruction's address with no hash; from then on the
+event runs it as data. A plan is kept only for a path that is known, whose key is the block's own (its start reached
+by a branch, or the last event in it) and that read the block's bytes alone; two keys a site. A site's plan is used
+only while its block runs, its code not written meanwhile, and the translation is used only while its bytes are RAM's
+(a page of code put back or loaded with other bytes moves its epoch, and SH3::Lookup compares the bytes again), so a
+plan can never be another code's; plans hold no state. At the bosses 86-90% of events are a plan's. SaiDaiOuJou's
+boss, headless, 1,800 frames on an Apple M4: 6.09 s, 5.57 with the plans (-8.5%); on a Steam Machine see #18.
+`SPELUNK_NO_PLANS=1` turns them off (main's generic path, the same frames); `SPELUNK_PLANT_PLAN=1` makes the first
+plan served a cycle long, which the shadow check below must catch.
+
 ### The shadow check (tools/shadow/)
 
 The model is made faster only where the result stays the same: every cycle it gives and every field of its state, at

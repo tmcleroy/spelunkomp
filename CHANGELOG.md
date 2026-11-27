@@ -22,6 +22,10 @@ Versions follow [Semantic Versioning](https://semver.org/).
   picture meeting there. Dai-Ou-Jou Black Label's hidden bees, read from its enemies' records as the stage puts them
   there: every stage and loop. On the Hit boxes page, its own colour or hidden, like the other kinds.
 
+- **The board's slowdown worked out faster**: each translated piece of the game's code keeps what its memory costs
+  the first time it runs, so the model no longer looks it up every time (docs/SLOWDOWN.md). SaiDaiOuJou's busiest
+  scene about 8% faster on an Apple M4, and the same frames and slowdown as before.
+
 ## 0.5.0-beta.1
 
 Faster again, above all with run-ahead: the processor kept at speed between frames, run-ahead keeping only the
