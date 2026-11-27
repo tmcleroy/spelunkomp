@@ -2604,6 +2604,7 @@ int main(int argc, char **argv) {
     // would run with those controls, and are run again there as ever if the controls have changed once more
     const bool aheadEarlyOn = !getenv("SPELUNK_NO_AHEAD_EARLY");
     uint64_t aheadEarly = 0, aheadEarlyLate = 0;
+    uint64_t aheadPastNs = 0; // (an early run's time past the frame's: the frame's own time, as the port's)
     auto waitAhead = [&](std::chrono::steady_clock::time_point until) {
         const int ahead = features[FeatureIndex(ToolkitFeature::RunAhead)];
         const auto slice = std::chrono::microseconds(500);
@@ -2616,7 +2617,9 @@ int main(int argc, char **argv) {
                 scriptAt(frameCount);
                 uint32_t held[3] = {};
                 if (controls.Sample(held) && aheadKeepable() && !std::equal(held, held + 3, aheadKept.frames.front().held)) {
-                    const auto need = std::chrono::nanoseconds(static_cast<int64_t>(aheadFrameNs * ahead * 1.25));
+                    // (time for them all, or for all but one: one frame's work past the frame's time still saves the
+                    // rest of what the frame would run, and the frame waits for it: counted in its time)
+                    const auto need = std::chrono::nanoseconds(static_cast<int64_t>(aheadFrameNs * (ahead * 1.25 - 1)));
                     if (aheadFrameNs > 0 && now + need < until) {
                         hw.NetBack(aheadKept.frames.front().place);
                         for (const AheadKept::Frame &f : aheadKept.frames) {
@@ -2627,8 +2630,10 @@ int main(int argc, char **argv) {
                             aheadRun(held);
                         }
                         aheadEarly++;
-                        if (std::chrono::steady_clock::now() > until) {
+                        const auto done = std::chrono::steady_clock::now();
+                        if (done > until) {
                             aheadEarlyLate++;
+                            aheadPastNs = static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::nanoseconds>(done - until).count());
                         }
                         continue;
                     }
@@ -2643,7 +2648,8 @@ int main(int argc, char **argv) {
         }
     };
     while (running) {
-        const uint64_t workFrom = SDL_GetTicksNS();
+        const uint64_t workFrom = SDL_GetTicksNS() - aheadPastNs; // (with an early run's time past the frame's)
+        aheadPastNs = 0;
         // (Processor between frames, port/keep_awake.h: Light (0), Off (1), Full (2); Light is Full with run-ahead's 2
         // frames or more)
         {
