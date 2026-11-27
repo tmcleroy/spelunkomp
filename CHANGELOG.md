@@ -5,6 +5,12 @@ Versions follow [Semantic Versioning](https://semver.org/).
 
 ## Unreleased
 
+- **Run-ahead runs its frames again early** (run-ahead 1 and 2, offline): when the stick or a button changes, the
+  frames ahead are run again in the wait before the next frame, not all at once at its start, so the change costs that
+  frame one frame's work instead of three. The same frames, picture and sound. SaiDaiOuJou's boss on a Steam Machine
+  at run-ahead 2 with the stick moving: from 60 to 70 frames late a minute to 2 or 3, the slowest 5% of frames from
+  15.5 to 5.9 ms; Muchi Muchi Pork's from 154 to 53. SPELUNK_NO_AHEAD_EARLY=1 turns it off.
+
 ## 0.5.0-beta.1
 
 Faster again, above all with run-ahead: the processor kept at speed between frames, run-ahead keeping only the

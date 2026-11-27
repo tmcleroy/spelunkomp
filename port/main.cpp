@@ -2562,8 +2562,98 @@ int main(int argc, char **argv) {
                speed == recomp::layout::kFull && !toolsOn && !lagOn() && !rollbackTest && !replaying && !net && !waitingHost &&
                !attract && !booting && !(ThisGame().unseen && ThisGame().unseen(*board, features) >= 0);
     };
+    // (one frame ahead run as the game's own would be, kept before it is run: aheadKept)
+    double aheadFrameNs = 0; // (a frame ahead's time, as run lately: whether there is time for them before the frame)
+    auto aheadRun = [&](const uint32_t held[3]) {
+        const auto from = std::chrono::steady_clock::now();
+        AheadKept::Frame f;
+        f.place = aheadKept.frames.empty() ? 0 : 1 - aheadKept.frames.back().place;
+        std::copy(held, held + 3, f.held);
+        hw.NetKeep(f.place);
+        uint32_t given[3] = {held[0], held[1], held[2]};
+        controls.forced = given;
+        controls.forcedAutofire = true;
+        controls.readThisFrame = false;
+        if (ThisGame().beforeFrame) {
+            ThisGame().beforeFrame(*board, features);
+        }
+        const size_t soundBefore = hw.Sound().size();
+        hw.BeforeFrame();
+        board->RunFrame();
+        f.late = hw.AfterFrame(false);
+        if (!controls.readThisFrame) {
+            controls.Read();
+        }
+        if (ThisGame().afterFrame) {
+            ThisGame().afterFrame(*board, features);
+        }
+        controls.forced = nullptr;
+        controls.forcedAutofire = false;
+        f.sound.assign(hw.Sound().begin() + static_cast<std::ptrdiff_t>(soundBefore), hw.Sound().end());
+        hw.Sound().resize(soundBefore);
+        aheadKept.frames.push_back(std::move(f));
+        const double ns = static_cast<double>(std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now() - from).count());
+        aheadFrameNs = aheadFrameNs == 0 ? ns : std::max(ns, aheadFrameNs * 0.9 + ns * 0.1); // (a busy frame counts at once)
+    };
+    // ---- Run-ahead's frames run again early (SPELUNK_NO_AHEAD_EARLY=1: never): in the wait for the next frame, the
+    // controls are looked at every half millisecond; when they are no longer those the frames ahead were run with, and
+    // there is time before the frame to run them all again, the board is put back and they are run again with the
+    // controls as they are now, as the next frame would have to. At that frame, if the controls are still those, its
+    // frame is taken as kept and only the one frame more is run: a change of the stick costs one frame's work at the
+    // frame, not run-ahead's frames and one more. The same frames, picture and sound: they are what the next frame
+    // would run with those controls, and are run again there as ever if the controls have changed once more
+    const bool aheadEarlyOn = !getenv("SPELUNK_NO_AHEAD_EARLY");
+    // (SPELUNK_AHEAD_EARLY_LATE=1, a check's: the controls looked at only in the wait's last millisecond, and the frames
+    // run again there whatever the time: nearly every early run goes past the frame's time)
+    const bool aheadEarlyLateTest = getenv("SPELUNK_AHEAD_EARLY_LATE") != nullptr;
+    uint64_t aheadEarly = 0, aheadEarlyLate = 0;
+    uint64_t aheadPastNs = 0; // (an early run's time past the frame's: the frame's own time, as the port's)
+    auto waitAhead = [&](std::chrono::steady_clock::time_point until) {
+        const int ahead = features[FeatureIndex(ToolkitFeature::RunAhead)];
+        const auto slice = std::chrono::microseconds(500);
+        for (;;) {
+            const auto now = std::chrono::steady_clock::now();
+            if (now >= until) {
+                return;
+            }
+            if (aheadEarlyOn && !aheadKept.frames.empty() && static_cast<int>(aheadKept.frames.size()) == ahead &&
+                (!aheadEarlyLateTest || now + std::chrono::milliseconds(1) >= until)) {
+                scriptAt(frameCount);
+                uint32_t held[3] = {};
+                if (controls.Sample(held) && aheadKeepable() && !std::equal(held, held + 3, aheadKept.frames.front().held)) {
+                    // (time for them all, or for all but one: one frame's work past the frame's time still saves the
+                    // rest of what the frame would run, and the frame waits for it: counted in its time)
+                    const auto need = std::chrono::nanoseconds(static_cast<int64_t>(aheadFrameNs * (ahead * 1.25 - 1)));
+                    if (aheadFrameNs > 0 && (now + need < until || aheadEarlyLateTest)) {
+                        hw.NetBack(aheadKept.frames.front().place);
+                        for (const AheadKept::Frame &f : aheadKept.frames) {
+                            hw.NetDrop(f.place);
+                        }
+                        aheadKept.frames.clear();
+                        for (int i = 0; i < ahead; i++) {
+                            aheadRun(held);
+                        }
+                        aheadEarly++;
+                        const auto done = std::chrono::steady_clock::now();
+                        if (done > until) {
+                            aheadEarlyLate++;
+                            aheadPastNs = static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::nanoseconds>(done - until).count());
+                        }
+                        continue;
+                    }
+                }
+            }
+            const auto to = std::min(until, std::chrono::steady_clock::now() + slice);
+            if (awake::Mode() >= 2 || (awake::Mode() == 1 && to > until - std::chrono::milliseconds(3))) {
+                awake::SpinWhile([&]() { return std::chrono::steady_clock::now() >= to; });
+            } else {
+                std::this_thread::sleep_until(to);
+            }
+        }
+    };
     while (running) {
-        const uint64_t workFrom = SDL_GetTicksNS();
+        const uint64_t workFrom = SDL_GetTicksNS() - aheadPastNs; // (with an early run's time past the frame's)
+        aheadPastNs = 0;
         // (Processor between frames, port/keep_awake.h: Light (0), Off (1), Full (2); Light is Full with run-ahead's 2
         // frames or more)
         {
@@ -3230,31 +3320,7 @@ int main(int argc, char **argv) {
             // (the frames ahead run as the game's own, each kept before it is run, and the board left at the last:
             // aheadKept. Those still ahead from the last frame are kept as they are: their controls are these)
             while (static_cast<int>(aheadKept.frames.size()) < ahead) {
-                AheadKept::Frame f;
-                f.place = aheadKept.frames.empty() ? 0 : 1 - aheadKept.frames.back().place;
-                std::copy(aheadHeld, aheadHeld + 3, f.held);
-                hw.NetKeep(f.place);
-                controls.forced = aheadHeld;
-                controls.forcedAutofire = true;
-                controls.readThisFrame = false;
-                if (ThisGame().beforeFrame) {
-                    ThisGame().beforeFrame(*board, features);
-                }
-                const size_t soundBefore = hw.Sound().size();
-                hw.BeforeFrame();
-                board->RunFrame();
-                f.late = hw.AfterFrame(false);
-                if (!controls.readThisFrame) {
-                    controls.Read();
-                }
-                if (ThisGame().afterFrame) {
-                    ThisGame().afterFrame(*board, features);
-                }
-                controls.forced = nullptr;
-                controls.forcedAutofire = false;
-                f.sound.assign(hw.Sound().begin() + static_cast<std::ptrdiff_t>(soundBefore), hw.Sound().end());
-                hw.Sound().resize(soundBefore);
-                aheadKept.frames.push_back(std::move(f));
+                aheadRun(aheadHeld);
             }
         } else if (ahead > 0) {
             hw.BeginAhead();
@@ -3528,7 +3594,11 @@ int main(int argc, char **argv) {
         next += fast ? frameTime / 6 : frameTime * rate.ticks / rate.frames;
         const auto now = std::chrono::steady_clock::now();
         if (next > now) {
-            awake::PaceUntil(next); // (slept, or the last of it spun: Processor between frames, port/keep_awake.h)
+            if (!aheadKept.frames.empty() && aheadEarlyOn) {
+                waitAhead(next); // (the same, and the frames ahead run again early if the controls change)
+            } else {
+                awake::PaceUntil(next); // (slept, or the last of it spun: Processor between frames, port/keep_awake.h)
+            }
         } else if (now - next > frameTime * 4) {
             next = now; // (fell behind: start again from now)
         }
@@ -3567,6 +3637,10 @@ int main(int argc, char **argv) {
     if (aheadKept.kept + aheadKept.again) {
         printf("run-ahead: %llu frames kept, %llu run again\n", static_cast<unsigned long long>(aheadKept.kept),
                static_cast<unsigned long long>(aheadKept.again));
+        if (aheadEarly) {
+            printf("run-ahead: %llu times run again early, in the wait (%llu of them past the frame's time)\n",
+                   static_cast<unsigned long long>(aheadEarly), static_cast<unsigned long long>(aheadEarlyLate));
+        }
     }
     const int result = hw.Report();
     if (getenv("SPELUNK_REPORT_INPUT")) {

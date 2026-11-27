@@ -46,6 +46,23 @@ as without it, byte for byte (the state hash, the picture log and `--sound-log` 
 `SPELUNK_NO_AHEAD_KEEP=1` turns it off. The program says at its end how many frames were kept and how many run
 again.
 
+**Run again early.** A change of the controls was paid for at the next frame's start: the board put back, the game's
+frame and the frames ahead all run then (run-ahead 2: three frames, about 15 ms of SaiDaiOuJou's boss on a Steam
+Machine, past the frame's 16.7 with the rest of its work). Now the wait for the next frame looks at the controls every
+half millisecond, as the next frame will read them (`--press` scripts at that frame's number). When they are no longer
+those the frames ahead were run with, the board is put back and the frames ahead run again with the new ones, there
+in the wait, if there is time for all but one of them (one frame's work past the frame's time still saves the rest;
+the frame waits for it, and its time in the speed readout counts it). At the frame, if the controls are still those,
+its frame is taken as kept and one frame more is run; if they have changed again, it is put back as ever. The frames
+are what the next frame would have run with those controls, so the game, its pictures and its sound are the same:
+the picture log and the controls compared with `SPELUNK_NO_AHEAD_EARLY=1` (which turns it off), on a Mac also with
+`SPELUNK_AHEAD_EARLY_LATE=1`, a check's switch that looks only in the wait's last millisecond and runs them there
+whatever the time, so that nearly every early run goes past the frame's time (2,830 of 2,832: the same pictures and
+controls). SaiDaiOuJou's boss on a Steam Machine at run-ahead 2 with the stick moving (a direction every 2 to 8
+frames): 60 and 70 frames late a minute without, 3 and 2 with, the slowest 5% from 15.5 to 5.9 ms; Muchi Muchi Pork's
+boss 154 to 53. The program says at its end how many times they were run again early, and how many of those went past
+the frame's time.
+
 **The processor between frames** (Game: Processor between frames). A frame's work done, the program waits for the
 next, and a processor idle for a good part of each frame has its clock turned down by its power management: a Steam
 Machine (amd-pstate-epp, balance_performance) ran SaiDaiOuJou's boss at 3.68 GHz in play against 4.78 headless, and
