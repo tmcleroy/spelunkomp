@@ -153,23 +153,16 @@ const Game &ThisGame() {
         // (the M2-style gadgets, port/gadgets.h: the chips, the loop; and the score and stage, for the score by stage)
         using Kind = Gadget::Kind;
         g.gadgets = {
-            {"CHIPS", Kind::Meter,
-             [](const Board &board) {
+            // (the stock and the total as the HUD's two numbers, the one the game is counting now first)
+            {"CHIPS", Kind::Words, [](const Board &board) {
                  using namespace ket;
                  if (!Playing(board)) {
                      return std::string();
                  }
-                 return std::string(ChipsOnTotal(board) ? "TOTAL " : "STOCK ") +
-                        std::to_string(Word(board, ChipsOnTotal(board) ? kChipTotal : kChipStock)) + "\n" +
-                        (ChipsOnTotal(board) ? "STOCK " + std::to_string(Word(board, kChipStock)) : "TOTAL " + std::to_string(Word(board, kChipTotal)));
-             },
-             [](const Board &board, int &value, int &most) {
-                 using namespace ket;
-                 value = Word(board, ChipsOnTotal(board) ? kChipTotal : kChipStock);
-                 most = value <= 100 ? 100 : value <= 999 ? kChipStockMost : kChipTotalMost; // (999 and 9999 at most)
-                 return Playing(board);
-             },
-             0xFF40D0FFu},
+                 const std::string stock = "STOCK " + std::to_string(Word(board, kChipStock)) + " / " + std::to_string(kChipStockMost);
+                 const std::string total = "TOTAL " + std::to_string(Word(board, kChipTotal)) + " / " + std::to_string(kChipTotalMost);
+                 return ChipsOnTotal(board) ? ">" + total + "\n " + stock : ">" + stock + "\n " + total;
+             }},
             {"LOOP", Kind::Words, [](const Board &board) {
                  return Playing(board) ? std::string(Word(board, ket::kLoop) ? "SECOND LOOP" : "FIRST LOOP") : std::string();
              }},
