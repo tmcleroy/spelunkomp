@@ -138,6 +138,28 @@ void SH3::FollowBlock(uint32 start, unsigned steps) {
     }
 }
 
+// (runtime/plans.h: a plan run as data, the same for every site)
+__attribute__((noinline)) bool PlannedAccessDyn(SH3 &c, const PlanConst &p, uint32 plant, uint32 a, uint32 bytes, bool write, uint32 &got) {
+    Sh3Timing &m = c.memoryTiming;
+    if (m.from != p.from || m.lastLoad != p.lastLoad) {
+        return false;
+    }
+    const bool streamed = c.at != m.lastInsn || c.cycles != m.lastTime;
+    const uint32 extra = streamed ? m.Run(p.fetch, p.fetches, p.op, p.ops, p.tail + plant, p.span, p.info, false, c.inSlot, c.cycles) : 0;
+    got = m.AccessDataOut(c.timingPaths, c.at, a, bytes, write, c.cycles, extra, streamed, PlanCode{&c});
+    return true;
+}
+__attribute__((noinline)) bool PlannedTakenDyn(SH3 &c, const PlanConst &p, uint32 plant, uint32 branch, uint32 target, uint32 &got) {
+    Sh3Timing &m = c.memoryTiming;
+    if (m.from != p.from || m.lastLoad != p.lastLoad) {
+        return false;
+    }
+    got = m.TakenCore(branch, target, c.cycles, PlanCode{&c}, [&]() __attribute__((always_inline)) {
+        return m.Run(p.fetch, p.fetches, p.op, p.ops, p.tail + plant, p.span, p.info, true, false, c.cycles);
+    });
+    return true;
+}
+
 void SH3::InterpretBlock() {
     planSlots = nullptr; // (no plans for the interpreter: the generic path)
     SPELUNK_TS(g_timingStats.curStart = 0;)
@@ -379,14 +401,15 @@ void SH3::InstallTranslations() {
     for (size_t i = 0; i < planCount && !getenv("SPELUNK_NO_PLANS"); i++) {
         for (Translation &t : m_translations) {
             if (t.block->address == plans[i].start && t.block->length == plans[i].bytes) {
-                t.planSlots = plans[i].slots;
+                t.planSlots = getenv("SPELUNK_PLANS_DATA") ? plans[i].dataSlots : plans[i].slots;
                 t.planBytes = plans[i].bytes;
                 given++;
             }
         }
     }
     if (planCount) {
-        fprintf(stderr, "plans: %zu of %zu blocks' plans in use%s\n", given, planCount, getenv("SPELUNK_NO_PLANS") ? " (SPELUNK_NO_PLANS)" : "");
+        fprintf(stderr, "plans: %zu of %zu blocks' plans in use%s%s\n", given, planCount, getenv("SPELUNK_NO_PLANS") ? " (SPELUNK_NO_PLANS)" : "",
+                getenv("SPELUNK_PLANS_DATA") ? ", as data (SPELUNK_PLANS_DATA)" : ", their own code");
     }
 }
 

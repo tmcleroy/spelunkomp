@@ -51,19 +51,20 @@ for (block, end), rs in top:
             served += r['count']
         slots.setdefault(((to & ~1) - block) // 2, {})['t' if to & 1 else 'a'] = names
     n = (end - block) // 2
-    entries = []
-    for i in range(n):
-        if i not in slots:
-            entries.append('{}')
-            continue
-        def refs(kind, fn):
-            names = slots[i].get(kind, [])
-            return ', '.join(['&%s<%s, %d>' % (fn, nm, pid) for nm, pid in names] + ['nullptr'] * (2 - len(names)))
-        entries.append('{{%s}, {%s}}' % (refs('a', 'PlannedAccess'), refs('t', 'PlannedTaken')))
-    lines.append('const SH3::PlanSlot kS%08X[%d] = {%s};' % (block, n, ', '.join(entries)))
+    for table, suffix in (('kS', ''), ('kD', 'Data')):
+        entries = []
+        for i in range(n):
+            if i not in slots:
+                entries.append('{}')
+                continue
+            def refs(kind, fn):
+                names = slots[i].get(kind, [])
+                return ', '.join(['&%s<%s, %d>' % (fn, nm, pid) for nm, pid in names] + ['nullptr'] * (2 - len(names)))
+            entries.append('{{%s}, {%s}}' % (refs('a', 'PlannedAccess' + suffix), refs('t', 'PlannedTaken' + suffix)))
+        lines.append('const SH3::PlanSlot %s%08X[%d] = {%s};' % (table, block, n, ', '.join(entries)))
     lines.append('')
     blocks.append((block, end - block))
-lines += ['const PlanBlock kBlocks[] = {%s};' % ', '.join('{0x%08Xu, %du, kS%08X}' % (b, n, b) for b, n in blocks), '', '} // namespace', '',
+lines += ['const PlanBlock kBlocks[] = {%s};' % ', '.join('{0x%08Xu, %du, kS%08X, kD%08X}' % (b, n, b, b) for b, n in blocks), '', '} // namespace', '',
           'const PlanBlock *PlanBlocks(size_t &count) {', '    count = sizeof kBlocks / sizeof kBlocks[0];', '    return kBlocks;', '}', '',
           '} // namespace spelunk', '']
 open(out, 'w').write('\n'.join(lines))

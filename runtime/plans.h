@@ -25,7 +25,8 @@ struct PlanConst {
 };
 struct PlanBlock {
     uint32 start, bytes;
-    const SH3::PlanSlot *slots; // (one a halfword of the block: slots[(insn - start) / 2])
+    const SH3::PlanSlot *slots;     // (one a halfword of the block: slots[(insn - start) / 2]; each plan's own code)
+    const SH3::PlanSlot *dataSlots; // (the same plans run as data, SPELUNK_PLANS_DATA=1: PlannedAccessData)
 };
 // The game's (work/<id>/gen/plans.cpp; runtime/no_plans.cpp: none)
 const PlanBlock *PlanBlocks(size_t &count);
@@ -50,6 +51,18 @@ bool PlannedAccess(SH3 &c, uint32 a, uint32 bytes, bool write, uint32 &got) {
                                   : 0;
     got = m.AccessDataOut(c.timingPaths, c.at, a, bytes, write, c.cycles, extra, streamed, PlanCode{&c});
     return true;
+}
+// The plan as data (SPELUNK_PLANS_DATA=1): the site's guards, then one shared function running the plan through the
+// ordinary Run and Walk; no lookup, nothing unrolled, a few bytes a site (the lookup's share of the gain alone)
+bool PlannedAccessDyn(SH3 &c, const PlanConst &p, uint32 plant, uint32 a, uint32 bytes, bool write, uint32 &got);
+bool PlannedTakenDyn(SH3 &c, const PlanConst &p, uint32 plant, uint32 branch, uint32 target, uint32 &got);
+template <const PlanConst &P, int ID>
+bool PlannedAccessData(SH3 &c, uint32 a, uint32 bytes, bool write, uint32 &got) {
+    return PlannedAccessDyn(c, P, ID == 0 ? c.plantPlan : 0u, a, bytes, write, got);
+}
+template <const PlanConst &P, int ID>
+bool PlannedTakenData(SH3 &c, uint32 branch, uint32 target, uint32 &got) {
+    return PlannedTakenDyn(c, P, ID == 0 ? c.plantPlan : 0u, branch, target, got);
 }
 template <const PlanConst &P, int ID>
 bool PlannedTaken(SH3 &c, uint32 branch, uint32 target, uint32 &got) {
