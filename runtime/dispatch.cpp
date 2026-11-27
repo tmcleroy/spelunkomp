@@ -2,6 +2,7 @@
 // Copyright (C) 2026 Tommy McLeroy. Part of spelunkomp.
 // The block dispatcher: translations where there are any (and the RAM still holds what they were made from), the
 // interpreter a block at a time where not. runtime/blocks.h says how blocks are cut.
+#include "plans.h"
 #include "blocks.h"
 
 #include "../machine/sh3.h"
@@ -9,6 +10,7 @@
 
 #include <algorithm>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 
 namespace spelunk {
@@ -137,6 +139,7 @@ void SH3::FollowBlock(uint32 start, unsigned steps) {
 }
 
 void SH3::InterpretBlock() {
+    planSlots = nullptr; // (no plans for the interpreter: the generic path)
     SPELUNK_TS(g_timingStats.curStart = 0;)
     if (recording && (IsRam(PC) || IsFlash(PC))) [[unlikely]] {
         if (RecordBlock(PC, false) && recordStatic) {
@@ -285,7 +288,12 @@ void SH3::RunBlocks(uint64 stop) {
                     WaitAhead(*t);
                 }
                 SPELUNK_TS(g_timingStats.curStart = t->block->address; g_timingStats.curEnd = t->block->address + t->block->length;)
+                planSlots = t->planSlots;
+                planStart = t->block->address;
+                planBytes = t->planBytes;
+                codeWritten = false;
                 t->block->run(*this);
+                planSlots = nullptr;
                 nativeBlocks++;
             } else {
                 if (countInterpreted) [[unlikely]] {
@@ -319,7 +327,12 @@ void SH3::RunOneBlock(bool native) {
     if (mode == Mode::Native) {
         if (Translation *t = Lookup(PC)) {
             SPELUNK_TS(g_timingStats.curStart = t->block->address; g_timingStats.curEnd = t->block->address + t->block->length;)
+            planSlots = t->planSlots;
+            planStart = t->block->address;
+            planBytes = t->planBytes;
+            codeWritten = false;
             t->block->run(*this);
+            planSlots = nullptr;
             nativeBlocks++;
             return;
         }
@@ -352,6 +365,24 @@ void SH3::InstallTranslations() {
         Translation *&head = slots[(phys & 0xFFF) >> 1];
         t.next = head;
         head = &t;
+    }
+    // (the plans compiled in, runtime/plans.h, each given to the translation of its block: the same address and
+    // length; SPELUNK_NO_PLANS=1: none, every event the generic path's)
+    plantPlan = getenv("SPELUNK_PLANT_PLAN") ? 1u : 0u;
+    size_t planCount = 0;
+    const PlanBlock *plans = PlanBlocks(planCount);
+    size_t given = 0;
+    for (size_t i = 0; i < planCount && !getenv("SPELUNK_NO_PLANS"); i++) {
+        for (Translation &t : m_translations) {
+            if (t.block->address == plans[i].start && t.block->length == plans[i].bytes) {
+                t.planSlots = plans[i].slots;
+                t.planBytes = plans[i].bytes;
+                given++;
+            }
+        }
+    }
+    if (planCount) {
+        fprintf(stderr, "plans: %zu of %zu blocks' plans in use%s\n", given, planCount, getenv("SPELUNK_NO_PLANS") ? " (SPELUNK_NO_PLANS)" : "");
     }
 }
 

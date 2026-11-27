@@ -425,6 +425,10 @@ struct Hw {
     }
     // At the end of a run (checks)
     int Report() {
+        if (board->cpu.plannedEvents + board->cpu.genericEvents) {
+            printf("planned: %llu events served, %llu generic\n", static_cast<unsigned long long>(board->cpu.plannedEvents),
+                   static_cast<unsigned long long>(board->cpu.genericEvents));
+        }
         if (checkVideo && useGpu) {
             // (and all of VRAM at the end: what the screen did not show)
             std::vector<uint16_t> hard;

@@ -41,6 +41,7 @@
 #ifdef SPELUNK_TIMING_STATS
 #include <algorithm>
 #include <cstdio>
+#include <string>
 #include <unordered_map>
 #define SPELUNK_TS(...) __VA_ARGS__
 #else
@@ -68,6 +69,84 @@ struct TimingStats {
         uint64_t events = 0, extra = 0, found = 0;
     };
     std::unordered_map<uint32_t, Block> blocks;
+    // (SPELUNK_PLAN_DUMP=file: every path streamed in a translated block, with its plan, for tools/plans/make_plans.py:
+    // the plans compiled into the code, runtime/plans.h)
+    const char *dumpPath = getenv("SPELUNK_PLAN_DUMP");
+    struct Dumped {
+        uint32_t block, blockEnd, from, to;
+        int8_t lastLoad;
+        uint64_t count = 0;
+        uint32_t lo, bytes, tail, span;
+        uint32_t count2, known, useStall, slot, own;
+        int load, infoLastLoad;
+        std::vector<uint32_t> fetch;
+        std::vector<uint32_t> op; // (add | kind << 16 | arg << 24)
+    };
+    std::unordered_map<std::string, Dumped> dumped;
+    template <typename Op, typename Info>
+    void Dump(uint32_t from, uint32_t to, int8_t lastLoad, uint32_t lo, uint32_t bytes, const uint32_t *fetch, uint32_t fetches,
+              const Op *op, uint32_t ops, uint32_t tail, uint32_t span, const Info &info) {
+        if (!dumpPath || curStart == 0) {
+            return;
+        }
+        char key[64];
+        snprintf(key, sizeof key, "%08X %08X %08X %d", curStart, from, to, lastLoad);
+        Dumped &d = dumped[key];
+        if (d.count++ == 0) {
+            d.block = curStart;
+            d.blockEnd = curEnd;
+            d.from = from;
+            d.to = to;
+            d.lastLoad = lastLoad;
+            d.lo = lo;
+            d.bytes = bytes;
+            d.tail = tail;
+            d.span = span;
+            d.count2 = info.count;
+            d.known = info.known;
+            d.useStall = info.useStall;
+            d.slot = info.slot;
+            d.own = info.own;
+            d.load = info.load;
+            d.infoLastLoad = info.lastLoad;
+            d.fetch.assign(fetch, fetch + fetches);
+            d.op.clear();
+            for (uint32_t i = 0; i < ops; i++) {
+                d.op.push_back(op[i].add | static_cast<uint32_t>(op[i].kind) << 16 | static_cast<uint32_t>(op[i].arg) << 24);
+            }
+        }
+    }
+    void WriteDump() const {
+        FILE *out = dumpPath ? fopen(dumpPath, "w") : nullptr;
+        if (!out) {
+            return;
+        }
+        for (const auto &[key, d] : dumped) {
+            fprintf(out, "%08X %08X %08X %08X %d %llu %08X %u %u %u %u %u %d %u %u %u %d |", d.block, d.blockEnd, d.from, d.to, d.lastLoad,
+                    static_cast<unsigned long long>(d.count), d.lo, d.bytes, d.tail, d.span, d.count2, d.known, d.load, d.useStall,
+                    d.slot, d.own, d.infoLastLoad);
+            for (uint32_t f : d.fetch) {
+                fprintf(out, " %08X", f);
+            }
+            fprintf(out, " |");
+            for (uint32_t o : d.op) {
+                fprintf(out, " %u:%u:%u", o & 0xFFFF, (o >> 16) & 0xFF, o >> 24);
+            }
+            fprintf(out, "\n");
+        }
+        fclose(out);
+    }
+    // (a path's key streamed again: its count, the plan dumped when it was found)
+    void DumpCount(uint32_t from, uint32_t to, int8_t lastLoad) {
+        if (!dumpPath || curStart == 0) {
+            return;
+        }
+        char key[64];
+        snprintf(key, sizeof key, "%08X %08X %08X %d", curStart, from, to, lastLoad);
+        if (auto it = dumped.find(key); it != dumped.end()) {
+            it->second.count++;
+        }
+    }
     void Key(uint32_t from, uint32_t insn) {
         const uint32_t f = from & ~1u;
         int k = 2;
@@ -785,11 +864,17 @@ struct Sh3Timing {
     // a delay slot (the CPU knows whether a conditional delayed branch before it was taken)
     template <typename Code>
     SPELUNK_TIMING_HOT uint32_t Access(Sh3Paths &paths, uint32_t insn, uint32_t address, uint32_t bytes, bool write, bool cpuSlot, uint64_t now, Code code);
+    // (Access with the code since the last event's cost given by `stream()`: Stream's, or a plan compiled into the
+    // translated code, runtime/plans.h, that is the same path's)
+    template <typename Code, typename StreamFn>
+    SPELUNK_TIMING_HOT uint32_t AccessCore(Sh3Paths &paths, uint32_t insn, uint32_t address, uint32_t bytes, bool write, uint64_t now, Code code, StreamFn stream);
     // A branch taken (or any instruction that set the PC: an exception, a sleep) by the instruction at `branch`, its
     // delay slot run and the plain count at `now`: the cycles the code since the last event and the branch cost
     // beyond the plain count. The next event's path starts at `target`
     template <typename Code>
     SPELUNK_TIMING_HOT uint32_t Taken(Sh3Paths &paths, uint32_t branch, uint32_t target, uint64_t now, Code code);
+    template <typename Code, typename StreamFn>
+    SPELUNK_TIMING_HOT uint32_t TakenCore(uint32_t branch, uint32_t target, uint64_t now, Code code, StreamFn stream);
     // An interrupt taken: the pipeline starts again at `target`
     void Redirect(uint32_t target, uint64_t now) {
         from = target | 1;
@@ -870,10 +955,12 @@ struct Sh3Paths {
         uint32_t block[kMemoBlocks];
         uint32_t blocks = 0;
         bool tooMany = false;
+        SPELUNK_TS(uint32_t lo = 0xFFFFFFFFu; uint32_t hi = 0;) // (the RAM read: the plan dump's)
         void Read(uint32_t a) {
             if (!IsRam(a)) {
                 return;
             }
+            SPELUNK_TS(lo = a < lo ? a : lo; hi = a > hi ? a : hi;)
             const uint32_t b = Block(a);
             for (uint32_t i = 0; i < blocks; i++) {
                 if (block[i] == b) {
@@ -1004,6 +1091,7 @@ inline uint32_t Sh3Timing::Stream(Sh3Paths &paths, uint32_t insn, bool branch, b
     const Sh3Paths::Memo *memo = paths.Find(from, insn | (branch ? 1u : 0u), lastLoad);
     SPELUNK_TS(g_timingStats.Key(from, insn);)
     if (memo) {
+        SPELUNK_TS(g_timingStats.DumpCount(from, insn | (branch ? 1u : 0u), lastLoad);)
         return Run(memo->fetch, memo->fetches, memo->op, memo->ops, memo->tail, memo->span, memo->info, branch, cpuSlot, now);
     }
     return StreamNew(paths, insn, branch, cpuSlot, now, code);
@@ -1065,6 +1153,9 @@ uint32_t Sh3Timing::StreamNew(Sh3Paths &paths, uint32_t insn, bool branch, bool 
             ts.notKeptRange += range ? 1 : 0;
         }
     })
+    SPELUNK_TS(g_timingStats.Dump(from, insn | (branch ? 1u : 0u), lastLoad, watching.lo,
+                                  watching.lo == 0xFFFFFFFFu ? 0 : watching.hi - watching.lo + 2, plan.fetch, plan.fetches, plan.op,
+                                  plan.ops, plan.tail, plan.span, info);)
     paths.Keep(from, insn | (branch ? 1u : 0u), info, plan, watching);
     return Run(plan.fetch, plan.fetches, plan.op, plan.ops, plan.tail, plan.span, info, branch, cpuSlot, now);
 }
@@ -1100,11 +1191,16 @@ SPELUNK_TIMING_HOT uint32_t Sh3Timing::Run(const uint32_t *fetch, uint32_t fetch
 
 template <typename Code>
 inline uint32_t Sh3Timing::Access(Sh3Paths &paths, uint32_t insn, uint32_t address, uint32_t bytes, bool write, bool cpuSlot, uint64_t now, Code code) {
+    return AccessCore(paths, insn, address, bytes, write, now, code,
+                      [&]() __attribute__((always_inline)) { return Stream(paths, insn, false, cpuSlot, now, code); });
+}
+template <typename Code, typename StreamFn>
+inline uint32_t Sh3Timing::AccessCore(Sh3Paths &paths, uint32_t insn, uint32_t address, uint32_t bytes, bool write, uint64_t now, Code code, StreamFn stream) {
     uint32_t extra = 0;
     const bool streamed = insn != lastInsn || now != lastTime; // (not the same instruction's second access)
     SPELUNK_TS(g_timingStats.access++; g_timingStats.accessSecond += streamed ? 0 : 1;)
     if (streamed) {
-        extra += Stream(paths, insn, false, cpuSlot, now, code);
+        extra += stream();
     }
     const uint64_t t = now + extra;
     if (!Cached(address)) {
@@ -1145,6 +1241,11 @@ inline uint32_t Sh3Timing::Access(Sh3Paths &paths, uint32_t insn, uint32_t addre
 
 template <typename Code>
 inline uint32_t Sh3Timing::Taken(Sh3Paths &paths, uint32_t branch, uint32_t target, uint64_t now, Code code) {
+    return TakenCore(branch, target, now, code,
+                     [&]() __attribute__((always_inline)) { return Stream(paths, branch, true, false, now, code); });
+}
+template <typename Code, typename StreamFn>
+inline uint32_t Sh3Timing::TakenCore(uint32_t branch, uint32_t target, uint64_t now, Code code, StreamFn stream) {
     uint32_t extra = 0;
     SPELUNK_TS(g_timingStats.branch++;)
     if (lastInsn == branch + 2 && from == branch + 4) {
@@ -1157,7 +1258,7 @@ inline uint32_t Sh3Timing::Taken(Sh3Paths &paths, uint32_t branch, uint32_t targ
         const uint64_t decode = nextDecode + TakenAdvance(op, slotCycles) - slotCycles;
         extra = decode > now ? static_cast<uint32_t>(decode - now) : 0;
     } else {
-        extra = Stream(paths, branch, true, false, now, code);
+        extra = stream();
     }
     from = target | 1;
     lastInsn = 0;
