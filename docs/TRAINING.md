@@ -249,6 +249,12 @@ to the other; none are drawn when neither has room (the picture across the windo
 | Game | Its own gadgets |
 | --- | --- |
 | Dai-Ou-Jou Black Label | RANK (the game rank, a graph), BULLET SPEED (with the hyper rank), CHAIN (the gauge, hits, best), HYPER (the gauge or the time left, items held), BEES, TO THE 2ND LOOP (the game's own test); score by stage |
+| Dai-Ou-Jou | The same as Black Label's, at the white label's own places (its bullet speed 10 at most); its readouts too |
+| DoDonPachi | RANK (0 to 63, the byte the enemies' fire reads, a graph), CHAIN (the timer, hits, best), BEES (this stage's, the sets of 13), TO THE 2ND LOOP (the game's own test: no continue, and misses, the best chain for the ship, the score or the bees); score by stage, 1-1 to 2-7 |
+| Ketsui | CHIPS (the stock and the total, the one counted now first), LOOP; score by stage. No rank was found (the enemies' patterns are by stage, loop and difficulty), nor the second loop's test |
+| Muchi Muchi Pork! | RANK (a graph), LARD, NEXT MEDAL, BOSS (the life of the part that counts, and the phase). From wnka's MAME layout, its places checked here |
+| Pink Sweets | RANK (a graph), ZAN, NEXT DROPS (the round of eight, and the shot and option power-ups dropped), NEXT MEDAL, BOSS (life and phase). From Olifante's MAME layout, its places checked here |
+| Ibara | RANK (a graph), NEXT DROPS (the round of 25), NEXT MEDAL. From the MAME layout linked from epozzobon.it/re (its places for this set's later program), checked here |
 
 ## Not yet
 
