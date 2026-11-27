@@ -129,6 +129,9 @@ namespace {
         if (name == "run_ahead" || name == "input_lag") {
             return Share::Off; // (on the Game and Display pages, but rollback does what they do)
         }
+        if (name == "keep_awake") {
+            return Share::Own; // (on the Game page, but this machine's: how its processor waits)
+        }
         if (category == "Game" || category == "Board") {
             return Share::Host; // (the Board page's settings: the host's board, its EEPROM, is the match's)
         }

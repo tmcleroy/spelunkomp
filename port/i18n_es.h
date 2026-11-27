@@ -37,6 +37,23 @@ inline constexpr recomp::i18n::Entry kSpanish[] = {
     {"Speed readout", "Indicador de velocidad"},
     {"How fast the game itself is going, in the corner: 100% at full speed, less where it slows down (the frames of the last second in which the game was ready with a new picture). Slowdown is part of these games' scoring and survival; this shows where it is. With the host's time: beside it, how long this machine took to make each frame over the last second, in milliseconds. A board's frame is about 16.7 ms: a machine near or over that is too slow for the game, whose slowdown is then the machine's and not the board's.", "Qué tan rápido va el propio juego, en la esquina: 100% a toda velocidad, menos donde se ralentiza (los cuadros del último segundo en que el juego tuvo lista una imagen nueva). La ralentización es parte de la puntuación y la supervivencia de estos juegos; esto muestra dónde está. Con el tiempo de la máquina: al lado, cuánto tardó esta máquina en hacer cada cuadro durante el último segundo, en milisegundos. Un cuadro de la placa dura unos 16,7 ms: una máquina cerca de eso o por encima es demasiado lenta para el juego, y la ralentización es entonces de la máquina y no de la placa."},
     {"On, with the host's time", "Sí, con el tiempo de la máquina"},
+    // (the Scene export page and the launcher's Scene diorama: port/scene.h)
+    {"Scene export", "Exportar escena"},
+    {"Save scene", "Guardar escena"},
+    {"Record clip", "Grabar clip"},
+    {"Clip length", "Duración del clip"},
+    {"How long Record clip records for.", "Cuánto graba Grabar clip."},
+    {"3 seconds", "3 segundos"},
+    {"5 seconds", "5 segundos"},
+    {"10 seconds", "10 segundos"},
+    {"Scene diorama", "Diorama de escenas"},
+    {"Open diorama", "Abrir diorama"},
+    {"Saves the same for each frame from now, for as long as Clip length says, each layer's frames in a folder of their own (this row again, or Ctrl+F12, stops sooner). The game goes on as it does.", "Guarda lo mismo para cada frame desde ahora, durante lo que diga Duración del clip, los frames de cada capa en una carpeta propia (esta fila otra vez, o Ctrl+F12, lo para antes). El juego sigue como siempre."},
+    {"The picture taken apart: each of the board's layers by itself, as pictures with nothing where a layer has nothing, for one frame or a few seconds, to open in the scene diorama.", "La imagen desmontada: cada capa de la placa por separado, como imágenes sin nada donde la capa no tiene nada, de un cuadro o de unos segundos, para abrirlas en el diorama de escenas."},
+    {"Saves the picture as it is now, and each of the board's layers by itself (its tile layers and its sprites, each at its priority; on the CV1000, which draws every frame into one picture, the frame's draws in the order the game made them) with nothing where the layer has nothing, in a folder of its own in exports/scenes beside your saves, with a scene.json of the layers' order, back to front. The launcher's Open diorama shows it in 3D. Also Shift+F12.", "Guarda la imagen tal como está ahora, y cada capa de la placa por separado (sus capas de tiles y sus sprites, cada una en su prioridad; en la CV1000, que dibuja cada cuadro en una sola imagen, los dibujos del cuadro en el orden en que el juego los hizo) sin nada donde la capa no tiene nada, en una carpeta propia en exports/scenes junto a tus partidas guardadas, con un scene.json del orden de las capas, del fondo al frente. Abrir diorama, en el lanzador, la muestra en 3D. También Mayús+F12."},
+    {"Opens the scenes and clips you save in the games (Game > Scene export) in your browser as 3D cut-outs, to turn, pull apart and photograph.", "Abre en tu navegador las escenas y los clips que guardas en los juegos (Juego > Exportar escena) como recortes en 3D, para girarlos, separarlos y fotografiarlos."},
+    {"Show scenes folder", "Mostrar carpeta de escenas"},
+    {"Opens exports/scenes beside your saves, where Save scene and Record clip write, in your file manager.", "Abre exports/scenes junto a tus partidas guardadas, donde escriben Guardar escena y Grabar clip, en tu gestor de archivos."},
 };
 
 } // namespace port

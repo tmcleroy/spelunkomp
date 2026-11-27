@@ -66,6 +66,16 @@ namespace {
              "the CV1000 with Slowdown as the board a lot: on a Steam Deck keep it Off; a Steam Machine takes 1 frame (some frames "
              "late in Deathsmiles and SDOJ, many in Akai Katana). Cave's 68000 board and the PGM take any.",
              0, {"Off", "1 frame", "2 frames", "3 frames", "4 frames"}},
+            // (port/keep_awake.h. The first choice, 0, is the default, Light, as Slowdown's On; each machine's own
+            // online, port/netplay.cpp)
+            {"keep_awake", "Game", "Processor between frames",
+             "Between frames this machine waits for the next, and its processor, idle meanwhile, can turn its clock down: the "
+             "next frame's work then starts slow, and run-ahead's frames run again above all. Light: the last 3 ms before each "
+             "frame are spent busy, which keeps the clock up on most machines (a Steam Machine's frames about a fifth "
+             "quicker). Full: all the wait spent busy, for the most speed; it uses more power, and on a battery more of it. "
+             "With run-ahead at 2 frames or more, Light is Full. Off: the processor rests as it will. The game plays exactly "
+             "the same with any.",
+             0, {"Light", "Off", "Full"}},
             {"input_lag", "Display", "Input lag readout",
              "At the bottom of the picture: how many frames the game itself takes to show a press (found in play, by running "
              "the next frames from one moment with the stick pushed and without, unseen, every few seconds), what run-ahead "
@@ -171,6 +181,9 @@ namespace {
              "harshest of it; Softer, more, for a warmer sound. Off: the sound as the chips make it. The game plays exactly "
              "the same either way.",
              0, {"Off", "Soft", "Softer"}},
+            // (the Scene export page's Record clip: port/scene.h, port/main.cpp's sceneClip; only what is saved here)
+            {"scene_clip_length", "Scene export", "Clip length", "How long Record clip records for.", 0,
+             {"3 seconds", "5 seconds", "10 seconds"}},
         };
         return features;
     }

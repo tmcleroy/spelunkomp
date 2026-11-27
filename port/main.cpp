@@ -20,6 +20,7 @@
 //
 // Input lag (docs/LAG.md): the host's devices are read when the game reads its ports (once a frame, in its vertical
 // sync interrupt), not at the top of the host's loop, and each frame is shown as soon as it is done.
+#include "keep_awake.h"
 #include "../machine/board.h"
 #include "../machine/zip.h"
 #include "../recomp-common/arcade_screen.h"
@@ -83,6 +84,8 @@ namespace {
 
 // The Alternative modes' Attract mode page (its Start: the port's own, every game's)
 constexpr const char *kAttractPage = "Attract mode";
+// (the Game page's Scene export page: port/scene.h; its Clip length is a toolkit feature, runtime/features.cpp)
+constexpr const char *kScenePage = "Scene export";
 
 using port::Hw;
 
@@ -98,7 +101,10 @@ const recomp::sdl::ArcadeBoard kArcadeBoard{Hw::kWidth, Hw::kHeight, 1e9 / stati
 std::vector<recomp::FeatureInfo> ArcadeFeatures() {
     using namespace recomp::sdl;
     std::vector<recomp::FeatureInfo> list;
-    list.push_back({"crt_resolution", "Arcade monitor", "Full screen resolution", ArcadeDescription(kArcadeBoard), kFeatureLauncherOnly,
+    // (the in-game menu offers only Off for it: a mode the monitor can't take, chosen while playing, could harm it. Said, as
+    // a player looking for the other choices there would think the row broken)
+    list.push_back({"crt_resolution", "Arcade monitor", "Full screen resolution",
+                    ArcadeDescription(kArcadeBoard) + " The in-game menu can only put it back to Off.", kFeatureLauncherOnly,
                     {"Off", ArcadeBoardName(kArcadeBoard), "Super resolution"}});
     list.push_back({"crt_screen", "Arcade monitor", "Screen", kScreenDescription, kFeatureLauncherOnly, {"Main", "Second", "Third", "Fourth"}});
     if (SwitchresBuilt()) {
@@ -142,13 +148,11 @@ void Turn(const uint32_t *in, int degrees, int scale, std::vector<uint32_t> &out
     TurnTo(in, degrees, outW, outH, out);
 }
 
-// The game's hit boxes (Game::hitBoxes) drawn on the tools' picture: turned as the picture is, at its scale, each kind
-// in the colour the Hit boxes page gives it (runtime/hit_boxes.h)
-void MarkHitBoxes(port::Hud &hud, const Board &board, int degrees, const std::vector<int> &features) {
-    // The boxes of the frame on show: the board shows a frame's picture some frames after the code that made it ran
-    // (Hw::kPictureLag: a CV1000's draw list is drawn the frame after it is made and shown the frame after that), so the
-    // boxes are kept by the board's frame and those of the frame the picture is from drawn (a frame not kept, after a
-    // rewind or a state loaded: the boxes as they are now)
+// The boxes of the frame on show: the board shows a frame's picture some frames after the code that made it ran
+// (Hw::kPictureLag: a CV1000's draw list is drawn the frame after it is made and shown the frame after that), so the
+// boxes are kept by the board's frame and those of the frame the picture is from given (a frame not kept, after a
+// rewind or a state loaded: the boxes as they are now)
+const std::vector<HitBox> &ShownHitBoxes(const Board &board) {
     struct Kept {
         uint64_t frame = ~0ull;
         std::vector<HitBox> boxes;
@@ -159,7 +163,13 @@ void MarkHitBoxes(port::Hud &hud, const Board &board, int degrees, const std::ve
     now.boxes.clear();
     ThisGame().hitBoxes(board, now.boxes);
     const Kept &then = kept[(board.frame - Hw::kPictureLag) % 8];
-    const std::vector<HitBox> &boxes = then.frame == board.frame - Hw::kPictureLag ? then.boxes : now.boxes;
+    return then.frame == board.frame - Hw::kPictureLag ? then.boxes : now.boxes;
+}
+
+// The game's hit boxes (Game::hitBoxes) drawn on the tools' picture: turned as the picture is, at its scale, each kind
+// in the colour the Hit boxes page gives it (runtime/hit_boxes.h)
+void MarkHitBoxes(port::Hud &hud, const Board &board, int degrees, const std::vector<int> &features) {
+    const std::vector<HitBox> &boxes = ShownHitBoxes(board);
     const float w = Hw::kWidth, h = Hw::kHeight;
     // (the tools' picture is the picture's shape as shown: its scale across and down may differ, the Aspect feature)
     const float sx = hud.width / (degrees % 180 ? h : w), sy = hud.height / (degrees % 180 ? w : h);
@@ -386,6 +396,7 @@ int main(int argc, char **argv) {
     bool realTime = false;
     int speedAtStart = -1;
     uint64_t stepTestAt = 0, stepTestLeft = 0;
+    std::map<uint64_t, bool> sceneShots; // (--save-scene FRAME, --record-clip FRAME: the scene export at a frame)
     std::map<uint64_t, std::string> shots, windowShots; // (--window-shot: the window's own pixels, as scaled)
     std::map<uint64_t, std::string> ramDumps;           // (--dump-ram FRAME:file: main RAM as the board holds it, for finding a game's facts)
     std::string windowShotNow, pictureLog; // (--picture-log FILE: a line per frame, the frame and a hash of the picture shown)
@@ -446,6 +457,10 @@ int main(int argc, char **argv) {
         } else if (a == "--shot" && i + 1 < argc) {
             const std::string v = argv[++i]; // FRAME:file.png (the picture as the window shows it)
             shots[strtoull(v.substr(0, v.find(':')).c_str(), nullptr, 0)] = v.substr(v.find(':') + 1);
+        } else if (a == "--save-scene" && i + 1 < argc) {
+            sceneShots[strtoull(argv[++i], nullptr, 0)] = false; // (checks: Save scene at this frame)
+        } else if (a == "--record-clip" && i + 1 < argc) {
+            sceneShots[strtoull(argv[++i], nullptr, 0)] = true; // (checks: Record clip from this frame)
         } else if (a == "--dump-ram" && i + 1 < argc) {
             const std::string v = argv[++i];
             ramDumps[strtoull(v.substr(0, v.find(':')).c_str(), nullptr, 0)] = v.substr(v.find(':') + 1);
@@ -1384,8 +1399,21 @@ int main(int argc, char **argv) {
                                       "the picture. P, or this row again, starts it again. The game runs exactly the frames it "
                                       "would; the Speed row above slows it instead."};
     const recomp::MenuCommand attractRow{kAttractPage, "Start", "Starts attract mode: the game's own show, over and over. Start (or a coin) ends it."};
+    // (the Scene export page's: port/scene.h)
+    const recomp::MenuCommand sceneRow{kScenePage, "Save scene",
+                                       "Saves the picture as it is now, and each of the board's layers by itself (its tile layers and its "
+                                       "sprites, each at its priority; on the CV1000, which draws every frame into one picture, the "
+                                       "frame's draws in the order the game made them) with nothing where the layer has nothing, in a "
+                                       "folder of its own in exports/scenes beside your saves, with a scene.json of the layers' order, "
+                                       "back to front. The launcher's Open diorama shows it in 3D. Also Shift+F12."};
+    const recomp::MenuCommand clipRow{kScenePage, "Record clip",
+                                      "Saves the same for each frame from now, for as long as Clip length says, each layer's frames in a "
+                                      "folder of their own (this row again, or Ctrl+F12, stops sooner). The game goes on as it does."};
+    const recomp::MenuCommand folderRow{kScenePage, "Show scenes folder",
+                                        "Opens exports/scenes beside your saves, where Save scene and Record clip write, in your file "
+                                        "manager."};
     bool hostWanted = false, attractWanted = false;
-    int firstGameCommand = 0, stepCommand = -1, attractCommand = -1;
+    int firstGameCommand = 0, stepCommand = -1, attractCommand = -1, sceneCommand = -1;
     auto setHostRow = [&](bool hosting) {
         menuConfig.commands = {hosting ? stopRow : hostRow};
         if (ThisGame().beginNow) {
@@ -1398,6 +1426,12 @@ int main(int argc, char **argv) {
         menuConfig.commands.push_back(stepRow);
         attractCommand = static_cast<int>(menuConfig.commands.size());
         menuConfig.commands.push_back(attractRow);
+        sceneCommand = static_cast<int>(menuConfig.commands.size());
+        menuConfig.commands.push_back(sceneRow);
+        menuConfig.commands.push_back(clipRow);
+#ifndef __ANDROID__
+        menuConfig.commands.push_back(folderRow); // (a phone has no file manager to show it in)
+#endif
         menu.Configure(menuConfig);
     };
     // The Display page's Your own preset, under the Shader (recomp-common/own_shaders.h): the presets in the shaders
@@ -1511,6 +1545,11 @@ int main(int argc, char **argv) {
                                 "battery RAM): each as the board is set unless chosen here. Put in as the board starts: Reset game to "
                                 "play with a change."});
         }
+        // (the Scene export page under Game: port/scene.h)
+        mc.pages.push_back({kScenePage, "Game",
+                            "The picture taken apart: each of the board's layers by itself, as pictures with nothing where a layer "
+                            "has nothing, for one frame or a few seconds, to open in the scene diorama.",
+                            false});
         mc.pages.push_back({"Controls", "", "The controls: autofire for each of the game's buttons."});
         // (the Arcade monitor page under Display, as cps2recomp has it; none on a phone)
         if (FeatureIndex("crt_resolution") < AllFeatures().size()) {
@@ -1829,6 +1868,140 @@ int main(int argc, char **argv) {
             say("SCREENSHOT NOT SAVED");
         }
     };
+    // The scene export (port/scene.h): the picture taken apart, each of the board's layers by itself, turned as the
+    // player sees it; the shape of a pixel as shown (the Aspect feature's); the hit boxes shown, listed and drawn as a
+    // layer of their own at the board's pixels; and the tools' writing (not the notes, which say what was saved), a
+    // layer of its own at the writing's size. Shift+F12 or Save scene a frame's, in the saves folder's exports/scenes/;
+    // Ctrl+F12 or Record clip, the same for every frame of a few seconds (the Scene export page's Clip length)
+    port::SceneExport sceneExport;
+    const size_t clipLengthAt = FeatureIndex("scene_clip_length");
+    auto sceneName = [&]() {
+        char stamp[32] = "";
+        const std::time_t now = std::time(nullptr);
+        if (const std::tm *local = std::localtime(&now)) {
+            std::strftime(stamp, sizeof stamp, "%Y-%m-%d %H.%M.%S", local);
+        }
+        return gameId + " " + stamp;
+    };
+    auto scenesFolder = [&]() { return (savesFolder.empty() ? std::string(".") : savesFolder) + "/exports/scenes/"; };
+    auto takeScene = [&](port::Scene &scene, int entries) {
+        if (!hw.TakeScene(scene, entries)) {
+            return false;
+        }
+        for (uint32_t &pixel : scene.picture) {
+            pixel |= 0xFF000000u;
+        }
+        // (the hit boxes the picture shows, in the board's pixels: each kind in its colour from the Hit boxes page)
+        scene.boxes.clear();
+        if (hitBoxesAt < features.size() && features[hitBoxesAt] && ThisGame().hitBoxes) {
+            static const char *const kKinds[HitBox::kKinds] = {"ship", "bullet", "body", "shot", "ground"};
+            for (const HitBox &b : ShownHitBoxes(*board)) {
+                uint32_t fill = 0, edge = 0;
+                const size_t at = b.kind < HitBox::kKinds ? FeatureIndex(hitboxes::Kind(b.kind).name) : features.size();
+                if (b.kind >= HitBox::kKinds || !hitboxes::Style(b.kind, at < features.size() ? features[at] : 0, fill, edge)) {
+                    continue;
+                }
+                port::SceneBox box;
+                box.player = b.kind == HitBox::Ship ? 0 : -1;
+                box.kind = kKinds[b.kind];
+                box.x = static_cast<int>(std::floor(b.x0));
+                box.y = static_cast<int>(std::floor(b.y0));
+                box.width = std::max(1, static_cast<int>(std::ceil(b.x1)) - box.x);
+                box.height = std::max(1, static_cast<int>(std::ceil(b.y1)) - box.y);
+                if (box.x >= scene.width || box.y >= scene.height || box.x + box.width <= 0 || box.y + box.height <= 0) {
+                    continue;
+                }
+                box.colour = ((edge >> 24) ? edge : fill) & 0xFFFFFFu;
+                box.fill = static_cast<uint8_t>(fill >> 24);
+                scene.boxes.push_back(box);
+            }
+        }
+        port::TurnScene(scene, turnNow());
+        float sw = 0, sh = 0;
+        shapeNow(sw, sh);
+        scene.pixelAspect = (sw / static_cast<float>(scene.width)) / (sh / static_cast<float>(scene.height));
+        // (what the port draws over the picture: the boxes, and the writing)
+        scene.overlays.clear();
+        if (!scene.boxes.empty()) {
+            port::SceneLayer boxes;
+            boxes.name = "overlay-boxes";
+            boxes.board = "overlay";
+            boxes.Clear(static_cast<size_t>(scene.width) * scene.height);
+            for (const port::SceneBox &b : scene.boxes) {
+                for (int y = std::max(b.y, 0); y < std::min(b.y + b.height, scene.height); y++) {
+                    for (int x = std::max(b.x, 0); x < std::min(b.x + b.width, scene.width); x++) {
+                        const bool rim = x == b.x || y == b.y || x == b.x + b.width - 1 || y == b.y + b.height - 1;
+                        const uint32_t alpha = rim ? 0xFFu : b.fill;
+                        if (alpha) {
+                            boxes.pixels[static_cast<size_t>(y) * scene.width + x] = b.colour | (alpha << 24);
+                            boxes.empty = false;
+                        }
+                    }
+                }
+            }
+            scene.overlays.push_back(std::move(boxes));
+        }
+        if (hud.Any()) {
+            port::SceneLayer words;
+            words.name = "overlay-hud";
+            words.board = "overlay";
+            words.width = hud.width;
+            words.height = hud.height;
+            hud.WordsPicture(words.pixels);
+            words.empty = std::none_of(words.pixels.begin(), words.pixels.end(), [](uint32_t p) { return (p >> 24) != 0; });
+            if (!words.empty) {
+                scene.overlays.push_back(std::move(words));
+            }
+        }
+        return true;
+    };
+    auto saveScene = [&]() {
+        port::Scene scene;
+        if (!takeScene(scene, port::kSceneEntryPictures)) {
+            say("NO SCENE TO SAVE YET");
+            return;
+        }
+        say(sceneExport.Save(scene, scenesFolder(), sceneName()));
+    };
+    // (the Scene export page's Show scenes folder: made if there is none yet, and opened in the file manager, as a
+    // file:// link SDL hands the system)
+    auto showScenesFolder = [&]() {
+        const std::string folder = scenesFolder();
+        std::error_code error;
+        std::filesystem::create_directories(std::filesystem::path(std::u8string(folder.begin(), folder.end())), error);
+        std::string url = "file://";
+#ifdef _WIN32
+        url += '/';
+#endif
+        for (const unsigned char c : folder) {
+            if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '/' || c == '-' || c == '_' ||
+                c == '.' || c == '~' || c == ':') {
+                url += static_cast<char>(c);
+            } else if (c == '\\') {
+                url += '/';
+            } else {
+                static const char kHex[] = "0123456789ABCDEF";
+                url += '%';
+                url += kHex[c >> 4];
+                url += kHex[c & 15];
+            }
+        }
+        if (!SDL_OpenURL(url.c_str())) {
+            fprintf(stderr, "scene: could not open %s: %s\n", folder.c_str(), SDL_GetError());
+            say("THE SCENES FOLDER COULD NOT BE OPENED");
+        }
+    };
+    auto sceneClip = [&]() {
+        if (sceneExport.Recording()) {
+            sceneExport.StopClip();
+            say("SAVING SCENE CLIP...");
+            return;
+        }
+        static const int kSeconds[] = {3, 5, 10};
+        const int seconds = kSeconds[clipLengthAt < features.size() ? std::clamp(features[clipLengthAt], 0, 2) : 0];
+        const double fps = 1e9 / static_cast<double>(std::chrono::duration_cast<std::chrono::nanoseconds>(Hw::kFrameTime).count());
+        say(sceneExport.StartClip(scenesFolder(), sceneName() + " clip", static_cast<int>(std::lround(seconds * fps)), fps));
+    };
     // (Esc, F1, the gamepad's menu buttons, Start and Select: the menu opened, or closed at once from any page)
     auto toggleMenu = [&]() {
         if (menu.IsOpen()) {
@@ -1891,6 +2064,12 @@ int main(int argc, char **argv) {
             // each of which begins a new game its own way: Game::command; then Frame advance and Attract mode's Start)
             if (chosen.id == stepCommand) {
                 stop(!paused);
+            } else if (chosen.id == sceneCommand) {
+                saveScene();
+            } else if (chosen.id == sceneCommand + 1) {
+                sceneClip();
+            } else if (chosen.id == sceneCommand + 2) {
+                showScenesFolder();
             } else if (chosen.id == attractCommand) {
                 attractWanted = true;
             } else if (chosen.id >= firstGameCommand) {
@@ -2248,7 +2427,7 @@ int main(int argc, char **argv) {
     auto netWaitScreen = [&]() {
         int w = 0, h = 0;
         canvasSize(w, h);
-        hud.Begin(w, h, menuTurnNow());
+        hud.Begin(w, h, menuTurnNow(), compactMenu());
         netScreen.Wait(hud, net.get(), netEnded, tick);
         hud.Changed();
         shown.assign(static_cast<size_t>(w) * h, 0xFF000000u);
@@ -2383,8 +2562,106 @@ int main(int argc, char **argv) {
                speed == recomp::layout::kFull && !toolsOn && !lagOn() && !rollbackTest && !replaying && !net && !waitingHost &&
                !attract && !booting && !(ThisGame().unseen && ThisGame().unseen(*board, features) >= 0);
     };
+    // (one frame ahead run as the game's own would be, kept before it is run: aheadKept)
+    double aheadFrameNs = 0; // (a frame ahead's time, as run lately: whether there is time for them before the frame)
+    auto aheadRun = [&](const uint32_t held[3]) {
+        const auto from = std::chrono::steady_clock::now();
+        AheadKept::Frame f;
+        f.place = aheadKept.frames.empty() ? 0 : 1 - aheadKept.frames.back().place;
+        std::copy(held, held + 3, f.held);
+        hw.NetKeep(f.place);
+        uint32_t given[3] = {held[0], held[1], held[2]};
+        controls.forced = given;
+        controls.forcedAutofire = true;
+        controls.readThisFrame = false;
+        if (ThisGame().beforeFrame) {
+            ThisGame().beforeFrame(*board, features);
+        }
+        const size_t soundBefore = hw.Sound().size();
+        hw.BeforeFrame();
+        board->RunFrame();
+        f.late = hw.AfterFrame(false);
+        if (!controls.readThisFrame) {
+            controls.Read();
+        }
+        if (ThisGame().afterFrame) {
+            ThisGame().afterFrame(*board, features);
+        }
+        controls.forced = nullptr;
+        controls.forcedAutofire = false;
+        f.sound.assign(hw.Sound().begin() + static_cast<std::ptrdiff_t>(soundBefore), hw.Sound().end());
+        hw.Sound().resize(soundBefore);
+        aheadKept.frames.push_back(std::move(f));
+        const double ns = static_cast<double>(std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now() - from).count());
+        aheadFrameNs = aheadFrameNs == 0 ? ns : std::max(ns, aheadFrameNs * 0.9 + ns * 0.1); // (a busy frame counts at once)
+    };
+    // ---- Run-ahead's frames run again early (SPELUNK_NO_AHEAD_EARLY=1: never): in the wait for the next frame, the
+    // controls are looked at every half millisecond; when they are no longer those the frames ahead were run with, and
+    // there is time before the frame to run them all again, the board is put back and they are run again with the
+    // controls as they are now, as the next frame would have to. At that frame, if the controls are still those, its
+    // frame is taken as kept and only the one frame more is run: a change of the stick costs one frame's work at the
+    // frame, not run-ahead's frames and one more. The same frames, picture and sound: they are what the next frame
+    // would run with those controls, and are run again there as ever if the controls have changed once more
+    const bool aheadEarlyOn = !getenv("SPELUNK_NO_AHEAD_EARLY");
+    // (SPELUNK_AHEAD_EARLY_LATE=1, a check's: the controls looked at only in the wait's last millisecond, and the frames
+    // run again there whatever the time: nearly every early run goes past the frame's time)
+    const bool aheadEarlyLateTest = getenv("SPELUNK_AHEAD_EARLY_LATE") != nullptr;
+    uint64_t aheadEarly = 0, aheadEarlyLate = 0;
+    uint64_t aheadPastNs = 0; // (an early run's time past the frame's: the frame's own time, as the port's)
+    auto waitAhead = [&](std::chrono::steady_clock::time_point until) {
+        const int ahead = features[FeatureIndex(ToolkitFeature::RunAhead)];
+        const auto slice = std::chrono::microseconds(500);
+        for (;;) {
+            const auto now = std::chrono::steady_clock::now();
+            if (now >= until) {
+                return;
+            }
+            if (aheadEarlyOn && !aheadKept.frames.empty() && static_cast<int>(aheadKept.frames.size()) == ahead &&
+                (!aheadEarlyLateTest || now + std::chrono::milliseconds(1) >= until)) {
+                scriptAt(frameCount);
+                uint32_t held[3] = {};
+                if (controls.Sample(held) && aheadKeepable() && !std::equal(held, held + 3, aheadKept.frames.front().held)) {
+                    // (time for them all, or for all but one: one frame's work past the frame's time still saves the
+                    // rest of what the frame would run, and the frame waits for it: counted in its time)
+                    const auto need = std::chrono::nanoseconds(static_cast<int64_t>(aheadFrameNs * (ahead * 1.25 - 1)));
+                    if (aheadFrameNs > 0 && (now + need < until || aheadEarlyLateTest)) {
+                        hw.NetBack(aheadKept.frames.front().place);
+                        for (const AheadKept::Frame &f : aheadKept.frames) {
+                            hw.NetDrop(f.place);
+                        }
+                        aheadKept.frames.clear();
+                        for (int i = 0; i < ahead; i++) {
+                            aheadRun(held);
+                        }
+                        aheadEarly++;
+                        const auto done = std::chrono::steady_clock::now();
+                        if (done > until) {
+                            aheadEarlyLate++;
+                            aheadPastNs = static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::nanoseconds>(done - until).count());
+                        }
+                        continue;
+                    }
+                }
+            }
+            const auto to = std::min(until, std::chrono::steady_clock::now() + slice);
+            if (awake::Mode() >= 2 || (awake::Mode() == 1 && to > until - std::chrono::milliseconds(3))) {
+                awake::SpinWhile([&]() { return std::chrono::steady_clock::now() >= to; });
+            } else {
+                std::this_thread::sleep_until(to);
+            }
+        }
+    };
     while (running) {
-        const uint64_t workFrom = SDL_GetTicksNS();
+        const uint64_t workFrom = SDL_GetTicksNS() - aheadPastNs; // (with an early run's time past the frame's)
+        aheadPastNs = 0;
+        // (Processor between frames, port/keep_awake.h: Light (0), Off (1), Full (2); Light is Full with run-ahead's 2
+        // frames or more)
+        {
+            static const size_t keepAwakeAt = FeatureIndex(std::string("keep_awake"));
+            const int chosen = keepAwakeAt < features.size() ? features[keepAwakeAt] : 0;
+            const int runAhead = features[FeatureIndex(ToolkitFeature::RunAhead)];
+            awake::Use(chosen == 1 ? 0 : chosen == 2 || (net == nullptr && runAhead >= 2) ? 2 : 1);
+        }
         // (run-ahead's kept frame: taken as the game's next, or the board put back, before anything else of the loop
         // can touch the board)
         if (!aheadKept.frames.empty()) {
@@ -2468,7 +2745,13 @@ int main(int argc, char **argv) {
                 speed = menu.Speed() < 0 ? recomp::layout::kFull : menu.Speed();
                 say(std::string("SPEED ") + recomp::layout::SpeedOf(speed).name);
             } else if (e.type == SDL_EVENT_KEY_DOWN && !e.key.repeat && e.key.scancode == SDL_SCANCODE_F12) {
-                screenshot();
+                if (e.key.mod & SDL_KMOD_SHIFT) {
+                    saveScene(); // (Shift+F12: the scene export's Save scene)
+                } else if (e.key.mod & SDL_KMOD_CTRL) {
+                    sceneClip(); // (Ctrl+F12: Record clip, or its end)
+                } else {
+                    screenshot();
+                }
             } else if (e.type == SDL_EVENT_GAMEPAD_BUTTON_DOWN) {
                 if (recomp::sdl::MenuButton(static_cast<SDL_GamepadButton>(e.gbutton.button))) {
                     toggleMenu();
@@ -2724,7 +3007,7 @@ int main(int argc, char **argv) {
                 pauseShown = true;
                 int w = 0, h = 0;
                 canvasSize(w, h);
-                hud.Begin(w, h, menuTurnNow());
+                hud.Begin(w, h, menuTurnNow(), compactMenu());
                 hud.Note(("STOPPED  FRAME " + std::to_string(frameCount)).c_str());
                 hud.Changed();
                 hw.SetOverlay(hud);
@@ -3011,7 +3294,7 @@ int main(int argc, char **argv) {
                 // (a CV1000's boot takes a few seconds even so: said, on black, a few times a second)
                 int w = 0, h = 0;
                 canvasSize(w, h);
-                hud.Begin(w, h, menuTurnNow());
+                hud.Begin(w, h, menuTurnNow(), compactMenu());
                 hud.Text(0.5f, 0.5f, 0, "STRAIGHT TO THE TITLE...", 0xFFB0B0B0u);
                 hud.Changed();
                 shown.assign(static_cast<size_t>(w) * h, 0xFF000000u);
@@ -3037,31 +3320,7 @@ int main(int argc, char **argv) {
             // (the frames ahead run as the game's own, each kept before it is run, and the board left at the last:
             // aheadKept. Those still ahead from the last frame are kept as they are: their controls are these)
             while (static_cast<int>(aheadKept.frames.size()) < ahead) {
-                AheadKept::Frame f;
-                f.place = aheadKept.frames.empty() ? 0 : 1 - aheadKept.frames.back().place;
-                std::copy(aheadHeld, aheadHeld + 3, f.held);
-                hw.NetKeep(f.place);
-                controls.forced = aheadHeld;
-                controls.forcedAutofire = true;
-                controls.readThisFrame = false;
-                if (ThisGame().beforeFrame) {
-                    ThisGame().beforeFrame(*board, features);
-                }
-                const size_t soundBefore = hw.Sound().size();
-                hw.BeforeFrame();
-                board->RunFrame();
-                f.late = hw.AfterFrame(false);
-                if (!controls.readThisFrame) {
-                    controls.Read();
-                }
-                if (ThisGame().afterFrame) {
-                    ThisGame().afterFrame(*board, features);
-                }
-                controls.forced = nullptr;
-                controls.forcedAutofire = false;
-                f.sound.assign(hw.Sound().begin() + static_cast<std::ptrdiff_t>(soundBefore), hw.Sound().end());
-                hw.Sound().resize(soundBefore);
-                aheadKept.frames.push_back(std::move(f));
+                aheadRun(aheadHeld);
             }
         } else if (ahead > 0) {
             hw.BeginAhead();
@@ -3076,7 +3335,7 @@ int main(int argc, char **argv) {
         {
             int canvasW = 0, canvasH = 0;
             canvasSize(canvasW, canvasH);
-            hud.Begin(canvasW, canvasH, menuTurnNow());
+            hud.Begin(canvasW, canvasH, menuTurnNow(), compactMenu());
             if (paused) {
                 hud.Note(("STOPPED  FRAME " + std::to_string(frameCount)).c_str()); // (a frame on: which it is)
             } else if (noteFrames > 0) {
@@ -3118,7 +3377,7 @@ int main(int argc, char **argv) {
                 for (const Readout &r : ThisGame().readouts) {
                     if (const std::string value = r.value(*board); !value.empty()) {
                         hud.Text(right ? 0.985f : 0.015f, y, right ? 1 : -1, std::string(r.name) + " " + value, 0xFFFFFFFFu);
-                        y += 0.045f;
+                        y += compactMenu() ? 0.06f : 0.045f; // (the large letters' rows: compactMenu)
                     }
                 }
             }
@@ -3152,6 +3411,25 @@ int main(int argc, char **argv) {
             }
         }
 
+        // (a scene clip's frame: the picture as shown, run-ahead's too, taken apart; and what the clip's writers say)
+        if (sceneExport.Recording()) {
+            port::Scene scene;
+            if (takeScene(scene, port::kSceneEntryMap)) {
+                sceneExport.Frame(std::move(scene));
+            } else {
+                sceneExport.Missed();
+            }
+        }
+        if (std::string said; sceneExport.TakeSaid(said)) {
+            say(said);
+        }
+        if (const auto it = sceneShots.find(frameCount); it != sceneShots.end()) {
+            if (it->second) {
+                sceneClip();
+            } else {
+                saveScene();
+            }
+        }
         turnPicture(wantPixels);
         if (pictures) {
             uint64_t h = 0xCBF29CE484222325ull;
@@ -3318,12 +3596,17 @@ int main(int argc, char **argv) {
         next += fast ? frameTime / 6 : frameTime * rate.ticks / rate.frames;
         const auto now = std::chrono::steady_clock::now();
         if (next > now) {
-            std::this_thread::sleep_until(next);
+            if (!aheadKept.frames.empty() && aheadEarlyOn) {
+                waitAhead(next); // (the same, and the frames ahead run again early if the controls change)
+            } else {
+                awake::PaceUntil(next); // (slept, or the last of it spun: Processor between frames, port/keep_awake.h)
+            }
         } else if (now - next > frameTime * 4) {
             next = now; // (fell behind: start again from now)
         }
     }
     arcade.Close(); // (the desktop's mode as it was)
+    sceneExport.StopClip(true); // (a scene clip still recording: its frames so far kept, its writers done before the end)
     if (net && netOn) {
         net->Leave();
         net->Report(true);
@@ -3356,6 +3639,10 @@ int main(int argc, char **argv) {
     if (aheadKept.kept + aheadKept.again) {
         printf("run-ahead: %llu frames kept, %llu run again\n", static_cast<unsigned long long>(aheadKept.kept),
                static_cast<unsigned long long>(aheadKept.again));
+        if (aheadEarly) {
+            printf("run-ahead: %llu times run again early, in the wait (%llu of them past the frame's time)\n",
+                   static_cast<unsigned long long>(aheadEarly), static_cast<unsigned long long>(aheadEarlyLate));
+        }
     }
     const int result = hw.Report();
     if (getenv("SPELUNK_REPORT_INPUT")) {

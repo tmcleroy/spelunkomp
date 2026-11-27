@@ -22,6 +22,7 @@ Each needs its own arcade ROM set, one version of it: the launcher's page for th
 | --- | --- | --- |
 | Game | Free play | No coins needed: Start begins a game or continues one. Off: a coin (5, or a gamepad's Select) for each credit |
 | Game | Start | Straight to the title: the board's checks, warning and logos run unseen. Or the whole boot, as the board shows it |
+| Game | Processor between frames | Light (the default): the last 3 ms of each frame's wait spent busy, so the processor's clock is not turned down between frames (port/keep_awake.h; docs/LAG.md). Full: all of the wait, for the most speed, using more power and battery; Light is Full with run-ahead at 2 frames or more. Off: the processor rests as it will. The same game with any |
 | Game | Slowdown as the board | On unless turned off: the board's CPU waiting on its memory worked out, so the game slows where a board does (CV1000: docs/SLOWDOWN.md; PGM: its waits). Off: busy scenes at full speed, for a slow device. Not yet compared with a board. Not on Cave's 68000 board, which has none to add |
 | Graphics | Screen | Stood up for an ordinary screen, or as the cabinet sends it, for a screen turned on its side (top to the left or right) |
 | Graphics | Menu orientation | Auto: the menu, the notes (SCREENSHOT SAVED, STOPPED) and the readouts turn with the picture, so As the cabinet on a monitor on its side they read upright there too. Upright: never turned, as before. Or turned to the right, upside down or to the left, for a monitor turned another way. The stick, the arrows, the mouse and a finger work the turned menu as it stands |
@@ -48,11 +49,45 @@ Each needs its own arcade ROM set, one version of it: the launcher's page for th
 | Training mode | Speed readout | How fast the game is going: under 100% where it slows down. On, with the host's time: beside it, this machine's own time a frame (the last second's mean), so a slow machine is told from the board's slowdown; logs/game.log has it a minute at a time |
 | Training mode | Speed (slow motion) | The Speed row at the page's top (as on the Game page): 3/4 down to 1/8 for study, or faster; the sound slowed with it. The game computes exactly the same frames |
 | Training mode | Frame advance | Stops the game with the frame's number shown; then O, Tab or a gamepad's right trigger goes on a frame at a time (held: frame after frame). P or the row again plays on |
+| Scene export | Save scene, Record clip, Clip length, Show scenes folder | The picture taken apart, each of the board's layers by itself ([below](#scene-export)): Shift+F12 a frame, Ctrl+F12 a clip of 3, 5 or 10 seconds; Show scenes folder opens where they are saved |
 | Online | Ping, Input delay, Hide names | What an online match shows at the bottom of the picture (docs/ONLINE.md) |
 
 Always there: save states (F5 / F9, and the menu), pause (P) and a frame on (O; stopped, Tab or the right trigger too),
 the speed from 1/8 to 8x (the menu, - and =; not in an online match),
-the board's test switch (F2) and service (F3), full screen (F11).
+the board's test switch (F2) and service (F3), full screen (F11), screenshots (F12).
+
+## Scene export
+
+The picture taken apart (`port/scene.h`; the in-game menu's **Game > Scene export** page, every game), in the files
+cps2recomp's scene export writes, so that its scene diorama opens them. **Save scene** (Shift+F12) writes a folder in
+`exports/scenes/` beside the saves: `picture.png`, the picture as shown, and each of the board's layers by itself as a
+PNG with nothing where the layer has nothing; `scene.json` lists them back to front, and laid over each other on the
+backdrop in that order they make `picture.png` again, pixel for pixel. What a layer is depends on the board:
+
+- **Cave's 68000 board**: each tile layer at each of its tiles' priorities (`layer1`, or `layer1-p2` where a layer has
+  tiles of more than one), and the sprites of each priority (`sprites-p0` to `sprites-p3`), as the chips put them: a
+  sprite goes below the tiles of its own priority.
+- **The PGM**: `sprites-behind` (the sprites the game puts behind the background), `background`, `sprites`, `text`.
+- **The CV1000**, whose blitter draws each frame into one picture: the frame's draws in the order the game made them,
+  run again from VRAM, a run of draws from the same part of VRAM in the same way one layer (`draws-1`...; joined to
+  no more than 12), and `picture-under` for what no draw of the frame painted. Each layer has the picture's own pixels
+  where it is in front, blends and all, and where a later one covers it, what its draws painted by themselves (their
+  sources' colours, tinted; a blend as over nothing, its black left out).
+
+The layers are turned as the picture is shown (a game made for a monitor on its side stood up), and `scene.json`'s
+`pixelAspect` says a pixel's shape as the Graphics page's Aspect shows it (a PGM's are 1.5 times as tall as wide, stood
+up). The sprites of a 68000 board or a PGM are saved each by itself too: `entries.png` holds every sprite drawn alone,
+`entry-map.png` says which is in front at each pixel, and `scene.json`'s `entries` lists them front to back with the
+box of the picture each covers. With the hit boxes on, they are a layer of their own (`overlay-boxes`) and listed in
+`scene.json` (`boxes`: the ship's as player 1's); the training tools' writing is `overlay-hud`, at the writing's size.
+**Record clip** (Ctrl+F12) saves the same for every frame of 3, 5 or 10 seconds (**Clip length**), each layer's frames
+in a folder of its own (`sprites-p2/0001.png`...), written by threads beside the game; Ctrl+F12 again stops it sooner. **Show scenes folder**
+opens `exports/scenes/` in the file manager (not on Android).
+
+**The scene diorama** (`tools/diorama/diorama.html`, cps2recomp's): the launcher's **Open diorama** (Tools) opens it
+in the browser; open a saved folder there (or drop it on the page) to see the layers as cut-outs at their own depths,
+to turn, pull apart, photograph or record, a clip played frame by frame; click a sprite to pick it out of its layer.
+Nothing leaves the browser. `--save-scene FRAME` and `--record-clip FRAME` do the same at a frame of a run (checks).
 
 ## From each game's facts
 

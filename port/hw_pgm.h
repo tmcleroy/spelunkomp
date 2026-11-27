@@ -14,6 +14,7 @@
 #include "gpu_pgm.h"
 #include "hud.h"
 #include "png_write.h"
+#include "scene.h"
 
 #include <SDL3/SDL.h>
 
@@ -131,6 +132,87 @@ struct Hw {
         renderedFrame = board->frame;
         gpu.Render(board->video);
         maxSprites = std::max(maxSprites, gpu.spritesDrawn);
+    }
+
+    // ---- The scene export (port/scene.h): the chip's picture taken apart, from the layers as they are and the sprites
+    // on show (as the GPU draws it), back to front: the sprites that go behind the background, the background, the
+    // sprites in front of it, the text ----
+    bool TakeScene(Scene &scene, int entries) {
+        Igs023 &video = board->video;
+        Igs023::Split split;
+        video.SplitFrame(split);
+        const size_t size = static_cast<size_t>(kWidth) * kHeight;
+        scene.width = kWidth;
+        scene.height = kHeight;
+        scene.frame = board->frame;
+        scene.backdrop = split.backdrop;
+        scene.picture.resize(size);
+        ReadScreen(scene.picture.data());
+        scene.layers.clear();
+        auto layer = [&](const char *name, const char *kind, int tile, const std::vector<uint32_t> &pixels, int behind) {
+            SceneLayer one;
+            one.name = name;
+            one.kind = kind;
+            one.tile = tile;
+            one.Clear(size);
+            for (size_t at = 0; at < size; at++) {
+                if (pixels[at] && (behind < 0 || split.spriteBehind[at] == behind)) {
+                    one.Set(at, pixels[at] & 0xFFFFFFu);
+                }
+            }
+            scene.layers.push_back(std::move(one));
+        };
+        layer("sprites-behind", "objects", 16, split.sprites, 1);
+        layer("background", "scroll", 32, split.background, -1);
+        layer("sprites", "objects", 16, split.sprites, 0);
+        layer("text", "scroll", 8, split.text, -1);
+        // The sprites each by itself, front to back (the chip draws the list from its end, and no sprite over a pixel
+        // one drew before it)
+        scene.entries.clear();
+        scene.entryMap.clear();
+        if (entries != kSceneNoEntries) {
+            const size_t count = video.shown.size();
+            std::vector<int> place(count, -1);
+            std::vector<int> x0(count, kWidth), y0(count, kHeight), x1(count, -1), y1(count, -1);
+            for (size_t at = 0; at < size; at++) {
+                if (const int32_t e = split.spriteEntry[at]; e >= 0 && static_cast<size_t>(e) < count) {
+                    const int x = static_cast<int>(at % kWidth), y = static_cast<int>(at / kWidth);
+                    x0[e] = std::min(x0[e], x);
+                    x1[e] = std::max(x1[e], x);
+                    y0[e] = std::min(y0[e], y);
+                    y1[e] = std::max(y1[e], y);
+                }
+            }
+            for (size_t n = count; n-- > 0;) {
+                const Igs023::Sprite &s = video.shown[n];
+                if (x1[n] < 0) {
+                    continue; // (none of it drawn: off the screen, or the chip's switch leaves it out)
+                }
+                SceneEntry e;
+                e.entry = static_cast<int>(n);
+                e.tile = s.offs;
+                e.colour = static_cast<int>(s.color);
+                e.level = s.pri;
+                e.attributes = s.flip;
+                e.layer = s.pri ? "sprites-behind" : "sprites";
+                if (entries == kSceneEntryPictures) {
+                    if (!video.SpriteAlone(n, e.x, e.y, e.w, e.h, e.pixels)) {
+                        continue;
+                    }
+                } else {
+                    e.x = x0[n], e.y = y0[n], e.w = x1[n] - x0[n] + 1, e.h = y1[n] - y0[n] + 1;
+                }
+                place[n] = static_cast<int>(scene.entries.size());
+                scene.entries.push_back(std::move(e));
+            }
+            scene.entryMap.assign(size, 0);
+            for (size_t at = 0; at < size; at++) {
+                if (const int32_t e = split.spriteEntry[at]; e >= 0 && static_cast<size_t>(e) < count && place[e] >= 0) {
+                    scene.entryMap[at] = static_cast<uint32_t>(place[e] + 1);
+                }
+            }
+        }
+        return true;
     }
 
     // ---- The training tools: the practice point and rewind, each moment the whole board ----

@@ -32,6 +32,11 @@ CaveVideo::CaveVideo()
 }
 
 void CaveVideo::DrawSprite(uint32_t code, uint16_t colourPriority, int x, int y, bool flipX, bool flipY, int width, int height, int zoomX, int zoomY) {
+    RasterSprite(spriteBuffer.data(), nullptr, 0, code << 8, colourPriority, x, y, flipX, flipY, width, height, zoomX, zoomY);
+}
+
+void CaveVideo::RasterSprite(uint16_t *buffer, int32_t *entries, int32_t entry, uint32_t code, uint16_t colourPriority, int x, int y, bool flipX,
+                             bool flipY, int width, int height, int zoomX, int zoomY) const {
     if (spritePixels.empty()) {
         return;
     }
@@ -40,14 +45,13 @@ void CaveVideo::DrawSprite(uint32_t code, uint16_t colourPriority, int x, int y,
     // one above leaves gaps; each pixel lands on the screen pixel its position falls in.) The source is written in its
     // own order, row by row from the first, as the sprite chip writes it (SpriteBlitter.sv: flipping moves where a
     // pixel lands, not when it is written), so where a zoom below 0x100 puts two of its pixels on one screen pixel the
-    // later of them stays, flipped or not
-    code <<= 8;
+    // later of them stays, flipped or not. (`code`: the first of its pixels, a multiple of 256)
     for (int sy = 0; sy < height; sy++) {
         const int py = (y + (flipY ? height - 1 - sy : sy) * zoomY) >> 8;
         if (py < 0 || py >= kHeight) {
             continue;
         }
-        uint16_t *row = &spriteBuffer[static_cast<size_t>(py) * kBufferSize];
+        uint16_t *row = &buffer[static_cast<size_t>(py) * kBufferSize];
         const uint32_t from = code + static_cast<uint32_t>(sy * width);
         for (int sx = 0; sx < width; sx++) {
             const int px = (x + (flipX ? width - 1 - sx : sx) * zoomX) >> 8;
@@ -57,6 +61,9 @@ void CaveVideo::DrawSprite(uint32_t code, uint16_t colourPriority, int x, int y,
             const uint8_t pixel = spritePixels[(from + static_cast<uint32_t>(sx)) & mask];
             if (pixel) {
                 row[px] = pixel | colourPriority;
+                if (entries) {
+                    entries[static_cast<size_t>(py) * kBufferSize + px] = entry;
+                }
             }
         }
     }
@@ -185,10 +192,16 @@ void CaveVideo::Draw(uint32_t *out) const {
     if (!rasterize) {
         return;
     }
+    Source source{{&layerRam[0], &layerRam[1], &layerRam[2], &layerRam[3]}, &paletteRam, layerRegs, spriteRegs[0], spriteRegs[1], tileBank,
+                  spriteBuffer.data()};
+    Compose(source, out, nullptr);
+}
+
+void CaveVideo::Compose(const Source &source, uint32_t *out, Split *split) const {
     // The palette as it is now
     static thread_local std::vector<uint32_t> colours(0x8000);
     for (uint32_t n = 0; n < 0x8000; n++) {
-        const uint16_t c = Word(paletteRam, n * 2);
+        const uint16_t c = Word(*source.palette, n * 2);
         const uint32_t g = (c >> 10) & 31, r = (c >> 5) & 31, b = c & 31;
         colours[n] = 0xFF000000u | (((b << 3) | (b >> 2)) << 16) | (((g << 3) | (g >> 2)) << 8) | ((r << 3) | (r >> 2));
     }
@@ -201,9 +214,9 @@ void CaveVideo::Draw(uint32_t *out) const {
     Layer set[kLayers];
     for (int n = 0; n < layers; n++) {
         Layer &l = set[n];
-        const uint16_t *regs = layerRegs[n];
+        const uint16_t *regs = source.layerRegs[n];
         l.kind = &kinds[n];
-        l.ram = &layerRam[n];
+        l.ram = source.layerRam[n];
         l.on = !(regs[2] & 0x10) && !l.kind->pixels.empty();
         l.big = !l.kind->only8 && (regs[1] & 0x2000);
         l.flipX = !(regs[0] & 0x8000);
@@ -213,10 +226,26 @@ void CaveVideo::Draw(uint32_t *out) const {
         l.priority = regs[2] & 3;
         // (each layer sits a pixel to the side of the one before, and 8 x 8 tiles 8 more)
         const int offsetX = 0x13 - (n + 1) - (l.big ? 0 : 8), offsetY = -0x12;
-        l.scrollX = (regs[0] & 0x1FF) - spriteRegs[0] + (l.flipX ? offsetX + 2 : -offsetX);
-        l.scrollY = (regs[1] & 0x1FF) - spriteRegs[1] + (l.flipY ? offsetY + 2 : -offsetY);
+        l.scrollX = (regs[0] & 0x1FF) - source.spriteX + (l.flipX ? offsetX + 2 : -offsetX);
+        l.scrollY = (regs[1] & 0x1FF) - source.spriteY + (l.flipY ? offsetY + 2 : -offsetY);
     }
     const uint32_t background = colours[backgroundPen & 0x7FFF];
+    if (split) {
+        const size_t size = static_cast<size_t>(kWidth) * kHeight;
+        split->layerCount = layers;
+        split->background = background;
+        for (int n = 0; n < layers; n++) {
+            split->tiles[n].assign(set[n].on ? size : 0, 0);
+            split->tilePriority[n].assign(set[n].on ? size : 0, 0);
+            split->tileOrder[n] = n;
+            split->big[n] = set[n].big;
+        }
+        // (among tiles of one priority the layer's own priority, then its number, puts one in front)
+        std::stable_sort(split->tileOrder, split->tileOrder + layers,
+                         [&](int a, int b) { return ((set[a].priority << 2) | a) < ((set[b].priority << 2) | b); });
+        split->sprites.assign(size, 0);
+        split->spritePriority.assign(size, 0);
+    }
     for (int y = 0; y < kHeight; y++) {
         // Each layer's row of the tile map for this line, and its scroll
         int mapY[kLayers], lineX[kLayers];
@@ -231,7 +260,7 @@ void CaveVideo::Draw(uint32_t *out) const {
             mapY[n] = l.rowSelect ? Word(*l.ram, 0x1000 + row * 4 + 2) & 0x1FF : (line + l.scrollY) & 0x1FF;
             lineX[n] = l.scrollX + (l.rowScroll ? Word(*l.ram, 0x1000 + row * 4) : 0);
         }
-        const uint16_t *sprites = &spriteBuffer[static_cast<size_t>(y) * kBufferSize];
+        const uint16_t *sprites = &source.spriteBuffer[static_cast<size_t>(y) * kBufferSize];
         for (int x = 0; x < kWidth; x++) {
             // The frontmost tile pixel: by the tile's priority, then its layer's, then the layer's number
             int best = -1;
@@ -251,7 +280,7 @@ void CaveVideo::Draw(uint32_t *out) const {
                     const uint32_t at = 0x4000 + static_cast<uint32_t>((py >> 3) * 64 + (px >> 3)) * 4;
                     tile = (static_cast<uint32_t>(Word(*l.ram, at)) << 16) | Word(*l.ram, at + 2);
                     code = tile & 0x3FFFF;
-                    if (l.kind->banked && tileBank && code < 0x10000) {
+                    if (l.kind->banked && source.tileBank && code < 0x10000) {
                         code += 0x40000;
                     }
                 }
@@ -261,20 +290,85 @@ void CaveVideo::Draw(uint32_t *out) const {
                     continue;
                 }
                 const int rank = static_cast<int>((tile >> 30) << 4) | (l.priority << 2) | n;
+                const uint32_t own = colours[(l.kind->colourBase + ((tile >> 24) & l.kind->colourMask) * l.kind->colourStep + pixel) & 0x7FFF];
+                if (split) {
+                    split->tiles[n][static_cast<size_t>(y) * kWidth + x] = own;
+                    split->tilePriority[n][static_cast<size_t>(y) * kWidth + x] = static_cast<uint8_t>(tile >> 30);
+                }
                 if (rank > best) {
                     best = rank;
-                    colour = colours[(l.kind->colourBase + ((tile >> 24) & l.kind->colourMask) * l.kind->colourStep + pixel) & 0x7FFF];
+                    colour = own;
                 }
             }
             if (const uint16_t sprite = sprites[x]) {
                 const int spritePriority = sprite >> 14, tilePriority = best < 0 ? 0 : (best >> 4) + 1;
+                if (split) {
+                    split->sprites[static_cast<size_t>(y) * kWidth + x] = colours[(((sprite >> 8) & 0x3F) * spriteColourStep + (sprite & 0xFF)) & 0x7FFF];
+                    split->spritePriority[static_cast<size_t>(y) * kWidth + x] = static_cast<uint8_t>(spritePriority);
+                }
                 if (tilePriority <= spritePriority) {
                     colour = colours[(((sprite >> 8) & 0x3F) * spriteColourStep + (sprite & 0xFF)) & 0x7FFF];
                 }
             }
-            out[y * kWidth + x] = colour;
+            if (out) {
+                out[y * kWidth + x] = colour;
+            }
         }
     }
+}
+
+void CaveVideo::SplitFrame(const NativeFrame68k &frame, Split &out) const {
+    std::vector<uint16_t> buffer(static_cast<size_t>(kBufferSize) * kBufferSize, 0);
+    std::vector<int32_t> entries(buffer.size(), -1);
+    for (size_t n = 0; n < frame.sprites.size(); n++) {
+        const NativeSprite &s = frame.sprites[n];
+        RasterSprite(buffer.data(), entries.data(), static_cast<int32_t>(n), s.code, static_cast<uint16_t>(s.attributes), s.x, s.y,
+                     (s.attributes >> 16) & 1, (s.attributes >> 17) & 1, s.width, s.height, s.zoomX, s.zoomY);
+    }
+    Source source{{&frame.layerRam[0], &frame.layerRam[1], &frame.layerRam[2], &frame.layerRam[3]}, &frame.palette, frame.layerRegs,
+                  frame.spriteRegs[0], frame.spriteRegs[1], frame.tileBank, buffer.data()};
+    Compose(source, nullptr, &out);
+    out.spriteEntry.assign(static_cast<size_t>(kWidth) * kHeight, -1);
+    for (int y = 0; y < kHeight; y++) {
+        for (int x = 0; x < kWidth; x++) {
+            out.spriteEntry[static_cast<size_t>(y) * kWidth + x] = entries[static_cast<size_t>(y) * kBufferSize + x];
+        }
+    }
+}
+
+bool CaveVideo::SpriteAlone(const NativeFrame68k &frame, size_t which, int &x, int &y, int &w, int &h, std::vector<uint32_t> &pixels) const {
+    if (which >= frame.sprites.size() || frame.palette.size() < 0x10000) {
+        return false;
+    }
+    const NativeSprite &s = frame.sprites[which];
+    // (the box it reaches, from where its first and last pixels land)
+    const int ax = s.x, bx = s.x + (s.width - 1) * s.zoomX, ay = s.y, by = s.y + (s.height - 1) * s.zoomY;
+    const int x0 = std::max(0, std::min(ax, bx) >> 8), x1 = std::min(kWidth - 1, std::max(ax, bx) >> 8);
+    const int y0 = std::max(0, std::min(ay, by) >> 8), y1 = std::min(kHeight - 1, std::max(ay, by) >> 8);
+    if (x1 < x0 || y1 < y0) {
+        return false;
+    }
+    std::vector<uint16_t> buffer(static_cast<size_t>(kBufferSize) * kBufferSize, 0);
+    RasterSprite(buffer.data(), nullptr, 0, s.code, static_cast<uint16_t>(s.attributes), s.x, s.y, (s.attributes >> 16) & 1,
+                 (s.attributes >> 17) & 1, s.width, s.height, s.zoomX, s.zoomY);
+    x = x0;
+    y = y0;
+    w = x1 - x0 + 1;
+    h = y1 - y0 + 1;
+    pixels.assign(static_cast<size_t>(w) * h, 0);
+    bool any = false;
+    for (int py = y0; py <= y1; py++) {
+        for (int px = x0; px <= x1; px++) {
+            if (const uint16_t sprite = buffer[static_cast<size_t>(py) * kBufferSize + px]) {
+                const uint16_t c = Word(frame.palette, ((((sprite >> 8) & 0x3F) * spriteColourStep + (sprite & 0xFF)) & 0x7FFF) * 2);
+                const uint32_t g = (c >> 10) & 31, r = (c >> 5) & 31, b = c & 31;
+                pixels[static_cast<size_t>(py - y0) * w + px - x0] =
+                    0xFF000000u | (((b << 3) | (b >> 2)) << 16) | (((g << 3) | (g >> 2)) << 8) | ((r << 3) | (r >> 2));
+                any = true;
+            }
+        }
+    }
+    return any;
 }
 
 void CaveVideo::Serialize(Archive &ar) {

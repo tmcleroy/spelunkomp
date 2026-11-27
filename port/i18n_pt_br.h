@@ -38,6 +38,23 @@ inline constexpr recomp::i18n::Entry kPortuguese[] = {
     {"Speed readout", "Indicador de velocidade"},
     {"How fast the game itself is going, in the corner: 100% at full speed, less where it slows down (the frames of the last second in which the game was ready with a new picture). Slowdown is part of these games' scoring and survival; this shows where it is. With the host's time: beside it, how long this machine took to make each frame over the last second, in milliseconds. A board's frame is about 16.7 ms: a machine near or over that is too slow for the game, whose slowdown is then the machine's and not the board's.", "Quão rápido o próprio jogo está indo, no canto: 100% em velocidade total, menos onde ele fica lento (os quadros do último segundo em que o jogo teve uma imagem nova pronta). A lentidão faz parte da pontuação e da sobrevivência nesses jogos; isto mostra onde ela está. Com o tempo da máquina: ao lado, quanto esta máquina levou para fazer cada quadro no último segundo, em milissegundos. Um quadro da placa dura uns 16,7 ms: uma máquina perto disso ou acima é lenta demais para o jogo, e a lentidão então é da máquina e não da placa."},
     {"On, with the host's time", "Ligado, com o tempo da máquina"},
+    // (the Scene export page and the launcher's Scene diorama: port/scene.h)
+    {"Scene export", "Exportar cena"},
+    {"Save scene", "Salvar cena"},
+    {"Record clip", "Gravar clipe"},
+    {"Clip length", "Duração do clipe"},
+    {"How long Record clip records for.", "Quanto tempo Gravar clipe grava."},
+    {"3 seconds", "3 segundos"},
+    {"5 seconds", "5 segundos"},
+    {"10 seconds", "10 segundos"},
+    {"Scene diorama", "Diorama de cenas"},
+    {"Open diorama", "Abrir diorama"},
+    {"Saves the same for each frame from now, for as long as Clip length says, each layer's frames in a folder of their own (this row again, or Ctrl+F12, stops sooner). The game goes on as it does.", "Salva o mesmo para cada frame a partir de agora, pelo tempo que Duração do clipe disser, os frames de cada camada numa pasta própria (esta linha de novo, ou Ctrl+F12, para antes). O jogo continua normalmente."},
+    {"The picture taken apart: each of the board's layers by itself, as pictures with nothing where a layer has nothing, for one frame or a few seconds, to open in the scene diorama.", "A imagem desmontada: cada camada da placa sozinha, como imagens sem nada onde a camada não tem nada, de um quadro ou de alguns segundos, para abrir no diorama de cenas."},
+    {"Saves the picture as it is now, and each of the board's layers by itself (its tile layers and its sprites, each at its priority; on the CV1000, which draws every frame into one picture, the frame's draws in the order the game made them) with nothing where the layer has nothing, in a folder of its own in exports/scenes beside your saves, with a scene.json of the layers' order, back to front. The launcher's Open diorama shows it in 3D. Also Shift+F12.", "Salva a imagem como está agora, e cada camada da placa sozinha (suas camadas de tiles e seus sprites, cada uma na sua prioridade; na CV1000, que desenha cada quadro numa só imagem, os desenhos do quadro na ordem em que o jogo os fez) sem nada onde a camada não tem nada, numa pasta própria em exports/scenes ao lado dos seus saves, com um scene.json da ordem das camadas, do fundo para a frente. Abrir diorama, no launcher, mostra em 3D. Também Shift+F12."},
+    {"Opens the scenes and clips you save in the games (Game > Scene export) in your browser as 3D cut-outs, to turn, pull apart and photograph.", "Abre no seu navegador as cenas e os clipes que você salva nos jogos (Jogo > Exportar cena) como recortes em 3D, para girar, separar e fotografar."},
+    {"Show scenes folder", "Mostrar pasta de cenas"},
+    {"Opens exports/scenes beside your saves, where Save scene and Record clip write, in your file manager.", "Abre exports/scenes ao lado dos seus saves, onde Salvar cena e Gravar clipe escrevem, no seu gerenciador de arquivos."},
 };
 
 } // namespace port

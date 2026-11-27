@@ -258,10 +258,45 @@ void Cv1000::SerializeSmall(Archive &ar) {
     ScheduleIrq1();
 }
 
+namespace {
+    // SPELUNK_KEEP_CHECK=1: every moment kept and put back compared with the whole of main RAM (the pages copied must be
+    // all that differ)
+    const bool g_keepCheck = getenv("SPELUNK_KEEP_CHECK") != nullptr;
+    void KeepCheck(const uint8_t *a, const uint8_t *b, size_t bytes, const char *what) {
+        if (g_keepCheck && std::memcmp(a, b, bytes) != 0) {
+            size_t at = 0;
+            while (a[at] == b[at]) {
+                at++;
+            }
+            fprintf(stderr, "keep check: %s differs from main RAM at %06zX (page %zu)\n", what, at, at >> 12);
+            std::_Exit(3);
+        }
+    }
+} // namespace
+
 void Cv1000::KeepNow(bool exact, int which) {
     const size_t ramSize = boardD ? 0x1000000 : 0x800000;
-    m_keptRam[which].resize(ramSize);
-    std::memcpy(m_keptRam[which].data(), ram.data(), ramSize);
+    if (m_pageWritten.empty()) {
+        m_pageWritten.assign(SH3::kRamSize >> 12, 0);
+        cpu.pageWritten = m_pageWritten.data();
+    }
+    std::vector<uint8_t> &kept = m_keptRam[which];
+    if (!m_keptWhole[which] || kept.size() != ramSize) {
+        kept.resize(ramSize);
+        std::memcpy(kept.data(), ram.data(), ramSize);
+    } else {
+        // (the pages written since this moment was last kept)
+        const uint32_t since = m_keptGen[which];
+        for (size_t page = 0; page < ramSize >> 12; page++) {
+            if (m_pageWritten[page] > since) {
+                std::memcpy(&kept[page << 12], &ram[page << 12], 0x1000);
+            }
+        }
+    }
+    KeepCheck(kept.data(), ram.data(), ramSize, "a moment kept");
+    // (the writes from here on are later than this moment)
+    m_keptGen[which] = cpu.writeGen++;
+    m_keptWhole[which] = true;
     m_kept[which].clear();
     Archive ar(m_kept[which], true);
     SerializeSmall(ar);
@@ -277,22 +312,22 @@ void Cv1000::KeepNow(bool exact, int which) {
 }
 
 void Cv1000::PutBack(int which, bool again) {
+    (void)again; // (the kept moment stays as it was either way)
     std::vector<uint8_t> &keptRam = m_keptRam[which];
     const size_t ramSize = keptRam.size();
-    // (a page of translated code that was written meanwhile is compared with its translations again)
+    const uint32_t since = m_keptGen[which];
     for (size_t page = 0; page < ramSize >> 12; page++) {
-        if (cpu.codeMark[page] && std::memcmp(&ram[page << 12], &keptRam[page << 12], 0x1000) != 0) {
-            ++cpu.pageEpoch[page];
+        if (m_pageWritten[page] > since) {
+            // (a page of translated code that was written meanwhile is compared with its translations again)
+            if (cpu.codeMark[page] && std::memcmp(&ram[page << 12], &keptRam[page << 12], 0x1000) != 0) {
+                ++cpu.pageEpoch[page];
+            }
+            std::memcpy(&ram[page << 12], &keptRam[page << 12], 0x1000);
+            // (now as the moment had it: written, for the other moment kept and for the next keep of this one)
+            m_pageWritten[page] = cpu.writeGen;
         }
     }
-    if (again || keptRam.size() != ram.size()) {
-        std::memcpy(ram.data(), keptRam.data(), ramSize);
-    } else {
-        // (the two change places: what the frames run on wrote is overwritten by the next KeepNow)
-        ram.swap(keptRam);
-        cpu.ram = ram.data();
-        blitter.ram = ram.data();
-    }
+    KeepCheck(keptRam.data(), ram.data(), ramSize, "a moment put back");
     Archive ar(m_kept[which], false);
     cpu.keepEpochs = true;
     cpu.keepPaths = true; // (the timing model's paths are the code's, not the state's: kept, but those over RAM written since)
@@ -325,6 +360,7 @@ void Cv1000::SetAside(Aside &to) {
 }
 
 void Cv1000::Trade(Aside &with, bool hold) {
+    RamChangedWholesale();
     const size_t ramSize = with.ram.size();
     // (a page of translated code that differs between the two is compared with its translations again; the RAM
     // changes places a part at a time, through a small buffer)
@@ -362,6 +398,7 @@ void Cv1000::KeepMoment(std::vector<uint8_t> &out) {
 }
 
 void Cv1000::SetMoment(std::vector<uint8_t> &moment, const uint8_t *ramThen) {
+    RamChangedWholesale();
     const size_t ramSize = RamSize();
     // (a page of translated code that differs is compared with its translations again)
     for (size_t page = 0; page < ramSize >> 12; page++) {
@@ -383,6 +420,9 @@ void Cv1000::Serialize(Archive &ar) {
     ar.Mark(0x43563130);
     cpu.Serialize(ar);
     ar.Bytes(ram.data(), boardD ? 0x1000000 : 0x800000);
+    if (!ar.Saving()) {
+        RamChangedWholesale(); // (the moments kept are whole again only from a whole copy)
+    }
     blitter.Serialize(ar);
     nand.Serialize(ar);
     rtc.Serialize(ar);

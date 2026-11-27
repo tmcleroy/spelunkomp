@@ -28,6 +28,11 @@ if [ -n "${PGO_PROFILE:-}" ] || [ "${PGO:-}" = 1 ]; then
         made=$(sed -n 's/^commit \([0-9a-f]*\).*/\1/p' "$profile.txt")
         [ "$made" = "$(git -C "$ROOT" rev-parse HEAD)" ] ||
             echo "warning: the profile was made from $made, not this source ($(git -C "$ROOT" rev-parse --short HEAD)): the functions changed since are built as without it (clang says which files, profile-instr-out-of-date)" >&2
+        # (the games pgo.sh kept from an earlier run, each with the commit its profile was made from)
+        for game_made in $(sed -n 's/^kept //p' "$profile.txt"); do
+            [ "${game_made#*@}" = "$(git -C "$ROOT" rev-parse HEAD)" ] ||
+                echo "warning: ${game_made%%@*}'s profile was kept from ${game_made#*@}, not this source ($(git -C "$ROOT" rev-parse --short HEAD)): what changed since is built as without it (PGO_FULL=1 tools/release/pgo.sh plays it again)" >&2
+        done
     fi
     # (a function the profile does not know is built as without it, silently: every game's own code but those played.
     # One it knows from other source is too, and clang warns: -Wprofile-instr-out-of-date, left on)
@@ -45,6 +50,8 @@ sed -e "s/@VERSION@/$VERSION/g" -e "s/@NAME@/$NAME/g" -e "s/@APP_ID@/$APP_ID/g" 
     "$ROOT/tools/release/Info.plist" > "$APP/Contents/Info.plist"
 add_notices "$APP/Contents/Resources" "$BUILD/launcher"
 add_librashader "$APP/Contents/Frameworks" librashader.dylib "$APP/Contents/Resources" "$APP/Contents/Resources/licenses"
+# (the launcher's Tools: the scene diorama, tools/diorama)
+cp "$ROOT/tools/diorama/diorama.html" "$APP/Contents/Resources/"
 codesign --force --deep -s - "$APP"
 
 for binary in "$APP/Contents/MacOS/"* "$APP/Contents/Frameworks/"*; do

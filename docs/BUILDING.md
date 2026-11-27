@@ -53,7 +53,7 @@ A release is built on the machine of someone with every game's set, never by CI 
 - `tools/release/macos.sh`: `Spelunkomp-macOS.zip`, one app for Apple silicon and Intel, SDL 3 built in, signed ad
   hoc (Gatekeeper warns the first time it is opened).
 - `tools/release/linux.sh`: `Spelunkomp-linux-x86_64.tar.gz` or `-arm64`, in the container of `tools/release/Dockerfile`.
-- `tools/release/windows.sh`: `Spelunkomp-windows-x64.zip`, cross-compiled with MinGW-w64 in the same container.
+- `tools/release/windows.sh`: `Spelunkomp-windows-x64.zip`, cross-compiled with llvm-mingw's clang (pinned in `tools/release/lib.sh`; `WINDOWS_CC=gcc`: MinGW-w64 gcc) in the same container.
 - `tools/release/android.sh` (`make android`): `Spelunkomp-android.apk`, one app for 64-bit ARM (Android 9 and
   later). Each game is its own library (`lib<id>.so`), loaded only when that game is played, in a process of its own;
   the launcher is a library too, and SDL 3 and librashader are built from source for it. Signed with the Android debug

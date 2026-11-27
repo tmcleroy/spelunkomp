@@ -5,6 +5,11 @@ Versions follow [Semantic Versioning](https://semver.org/).
 
 ## Unreleased
 
+- **Run-ahead runs its frames again early** (run-ahead 1 and 2, offline): when the stick or a button changes, the
+  frames ahead are run again in the wait before the next frame, not all at once at its start, so the change costs that
+  frame one frame's work instead of three. The same frames, picture and sound. SaiDaiOuJou's boss on a Steam Machine
+  at run-ahead 2 with the stick moving: from 60 to 70 frames late a minute to 2 or 3, the slowest 5% of frames from
+  15.5 to 5.9 ms; Muchi Muchi Pork's from 154 to 53. SPELUNK_NO_AHEAD_EARLY=1 turns it off.
 - **DoDonPachi Dai-Ou-Jou Black Label's scoring readouts**, what the game keeps and does not show: the most hits in a
   chain, the hyper gauge as a number (or, while a hyper is on, its level and the time it has left) with the hyper items
   held, the ranks as the game works them out (the bullets' speed, the game rank that sets their interval, the hyper
@@ -16,6 +21,34 @@ Versions follow [Semantic Versioning](https://semver.org/).
 - **Hidden items, a kind of hit box**: where something a game hides is before it is found, as faint lines across the
   picture meeting there. Dai-Ou-Jou Black Label's hidden bees, read from its enemies' records as the stage puts them
   there: every stage and loop. On the Hit boxes page, its own colour or hidden, like the other kinds.
+
+## 0.5.0-beta.1
+
+Faster again, above all with run-ahead: the processor kept at speed between frames, run-ahead keeping only the
+memory a frame changed, and the Windows and Linux downloads built with clang and a profile; and scene export, the
+picture taken apart into its layers for cps2recomp's diorama.
+
+- **Scene export** (Game > Scene export, Shift+F12; Ctrl+F12 a clip of 3, 5 or 10 seconds): the picture taken apart,
+  each of the board's layers by itself as a see-through PNG (Cave's 68000 board: its tile layers and sprites by
+  priority; the PGM: the sprites behind, the background, the sprites, the text; the CV1000: the frame's draws in the
+  order the game made them), each sprite by itself, and the hit boxes and readouts as layers of their own, in
+  cps2recomp's files: the launcher's Open diorama shows them in 3D (docs/FEATURES.md, Scene export).
+- **Processor between frames**, on the Game page: the processor kept from turning its clock down while the program
+  waits for the next frame, which on a Steam Machine let it fall from 4.8 to 3.7 GHz in play. Light (the default)
+  spends the last 3 ms of each wait busy, Full all of it (more power and battery); with run-ahead at 2 frames or more,
+  Light is Full. SaiDaiOuJou's boss on a Steam Machine: 7.8 ms a frame with it off, 6.0 Light, 5.45 Full; with
+  run-ahead 2 and the stick moving, half as many frames late. The game plays exactly the same with any.
+- **The Linux download is built with clang**, and can be built with a profile made on a Steam Machine or Deck
+  (tools/release/linux.sh, run-pgo-linux.sh, docs/RELEASING.md): the same frames and hashes as gcc's build (three
+  games of the three boards compared frame by frame), SaiDaiOuJou's busiest scene 4.4 ms a frame with gcc, 4.2 with
+  clang, 3.7 with clang and a profile on a Steam Machine. gcc's own profiles, which this replaces, made it slower.
+- **Run-ahead keeps only what a frame changed** (run-ahead 1 and 2, offline): a kept frame copied the board's whole
+  16 MB of memory, now only the pages written since the last. The same frames; on a Steam Machine at SaiDaiOuJou's
+  boss, run-ahead 1 with the stick moving went from 301 frames late a minute in 0.4.0 to 36 (with the clang build),
+  and with it still costs no more than run-ahead off.
+- **The Windows download is built with clang and a profile** made on a Windows PC (llvm-mingw, tools/release/
+  windows.sh, run-pgo-windows.ps1): the same frames and hashes as gcc's build, SaiDaiOuJou's boss about 16% faster;
+  run-ahead 1 with the stick moving from about 230 frames late a minute to about 45. It needs Windows 10 or later.
 
 ## 0.4.0-beta.1
 

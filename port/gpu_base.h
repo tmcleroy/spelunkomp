@@ -80,6 +80,8 @@ protected:
     // present leaves a fence, and the next such submit waits for the one before, so at most about twice
     // kFramesInFlight frames are queued
     void SubmitWork(SDL_GPUCommandBuffer *cmd);
+    void WaitFence(SDL_GPUFence *fence); // (port/keep_awake.h's modes)
+    bool AcquireSwapchain(SDL_GPUCommandBuffer *cmd, SDL_GPUTexture **swapchain, Uint32 *w, Uint32 *h);
     // Part of a texture brought back, waiting for the GPU
     void Download(SDL_GPUTexture *texture, int x, int y, int w, int h, void *out, uint32_t bytes);
     // The transfer buffer let go when it is larger than `most` bytes (Gpu::GetVram: after a read of all of VRAM, 64 MB,

@@ -175,7 +175,7 @@ endif()
 # a touch screen's controls: port/touch.cpp; a crash's log: port/crash_log.cpp;
 # an arcade monitor's modes, synced to the screen: recomp-common/arcade_screen.cpp, with Switchres on Windows,
 # downloaded: recomp-common/switchres.cmake)
-set(GAME_PORT_SOURCES port/main.cpp port/crash_log.cpp port/gpu_base.cpp port/shading.cpp ${GAME_GPU} port/netplay.cpp port/touch.cpp
+set(GAME_PORT_SOURCES port/main.cpp port/scene.cpp port/crash_log.cpp port/gpu_base.cpp port/shading.cpp ${GAME_GPU} port/netplay.cpp port/touch.cpp
     recomp-common/launcher/src/online.cpp recomp-common/launcher/src/run_program.cpp recomp-common/arcade_screen.cpp)
 # (Android: a library, lib<id>.so, which the game's activity loads and calls the main of: android/, port/android.cpp,
 # tools/release/android.sh)

@@ -38,6 +38,8 @@ if [ "${1:-}" = "--collection" ]; then
     for id in $GAMES; do
         [ -f "$B/$id" ] && cp "$B/$id" "$APP/Contents/MacOS/"
     done
+    # (the launcher's Tools: the scene diorama, tools/diorama)
+    cp "$(dirname "$0")/diorama/diorama.html" "$APP/Contents/Resources/"
 else
     GAME=${GAME:-mushisam}
     B=${B:-build/$GAME}

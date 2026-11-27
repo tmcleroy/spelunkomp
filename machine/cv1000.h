@@ -73,8 +73,10 @@ public:
     // is allocated per frame. Exact (online play's rollback, port/netplay.h): the sound chip runs on meanwhile and is
     // kept and put back with the rest, so the frames run from the moment kept are the game's own.
     // Two moments can be kept at once (`which`: online play's anchor and the next one); Drop lets one go.
-    // `again`: the moment can be put back again later (online play); run-ahead's put back, which never is, takes the
-    // kept RAM itself as main RAM (no copy) and leaves the copy as it was for the next KeepNow to fill
+    // Only main RAM's pages written since a moment are copied, kept or put back: every write to main RAM notes its page
+    // (SH3::NoteRamWrite), and a whole copy is made after a state is loaded or RAM is changed wholesale.
+    // SPELUNK_KEEP_CHECK=1: each kept and put back moment compared with all of RAM. `again`: the moment can be put back
+    // again later (online play); either way the kept moment stays as it was
     void KeepNow(bool exact = false, int which = 0);
     void PutBack(int which = 0, bool again = true);
     void Drop(int which);
@@ -112,6 +114,12 @@ public:
 private:
     std::vector<uint8_t> m_kept[2], m_keptRam[2], m_traded;
     bool m_keptExact[2] = {};
+    // (the pages' write generations, SH3::pageWritten; each kept moment's generation, and whether its RAM is whole:
+    // not after a state is loaded or RAM changed wholesale, when the next KeepNow copies all of it)
+    std::vector<uint32_t> m_pageWritten;
+    uint32_t m_keptGen[2] = {};
+    bool m_keptWhole[2] = {};
+    void RamChangedWholesale() { m_keptWhole[0] = m_keptWhole[1] = false; }
     uint32_t m_keptPathsClock[2] = {}, m_keptPathsGeneration[2] = {}; // (the timing model's paths as they were: PutBack)
     uint8_t m_soundRegister = 0;
     uint64_t m_blitterDone = 0; // the CPU cycle the blitter is ready again at

@@ -11,8 +11,14 @@
 #
 #   TARGETS="macos windows" tools/release/all.sh   # some of the targets (SHA256SUMS.txt is left alone)
 #   TARGETS="sums" tools/release/all.sh            # SHA256SUMS.txt alone, once every archive is in build/release/
-#   PGO=1 tools/release/all.sh                     # the macOS programs built with profile-guided optimisation:
-#                                                  #   tools/release/pgo.sh first (the others are built as before)
+#   PGO=1 PGO_USE=folder tools/release/all.sh      # built with profile-guided optimisation: macOS with a profile
+#                                                  #   tools/release/pgo.sh makes first; Linux x86_64 with the
+#                                                  #   counts in PGO_USE (run-pgo-linux.sh's, docs/RELEASING.md).
+#                                                  #   PGO=1 with no PGO_USE stops; PGO_LINUX=0: Linux without one.
+#                                                  #   Windows with the counts in PGO_USE_WINDOWS (run-pgo-windows.ps1's);
+#                                                  #   PGO=1 with none stops; PGO_WINDOWS=0: Windows without one
+#   PGO_GENERATE=1 TARGETS=linux-x86_64 tools/release/all.sh  # Linux's instrumented build, for run-pgo-linux.sh
+#   PGO_GENERATE=1 TARGETS=windows tools/release/all.sh       # Windows', for run-pgo-windows.ps1 on a PC
 #   (the Android app is signed with the release key in ~/.config/spelunkomp/android-signing.env, outside the
 #    repository; tools/release/android.sh, RELEASE=1, refuses without it: leave android out of TARGETS then)
 # Translated code that is a link to another folder (work/<id>/gen -> elsewhere) is followed in the containers too:
@@ -45,6 +51,37 @@ step() {
     printf '[%s] %s done (%s)\n' "$(date '+%H:%M:%S')" "$label" "$(fmt_dur $((t1 - t0)))"
 }
 
+# (PGO=1: Linux x86_64 is built with the counts made on a Steam Machine or Deck, PGO_USE=folder (linux.sh), or said to
+# be built without them, PGO_LINUX=0; checked before anything is built. ARM64 has no device the counts are made on:
+# it is built without them)
+LINUX_PGO_USE=""
+if [ "${PGO_LINUX:-}" = 0 ]; then
+    ! has_target linux-x86_64 || echo "PGO: Linux ships without a profile (PGO_LINUX=0)"
+elif has_target linux-x86_64 && { [ "${PGO:-}" = 1 ] || [ -n "${PGO_USE:-}" ]; }; then
+    if [ -z "${PGO_USE:-}" ]; then
+        echo "error: PGO=1 with no Linux counts: PGO_USE=<the folder of run-pgo-linux.sh's raw.tar.gz, unpacked> (docs/RELEASING.md), or PGO_LINUX=0 to ship Linux without a profile" >&2
+        exit 1
+    fi
+    [ -d "$PGO_USE" ] || { echo "error: no folder $PGO_USE (PGO_USE)" >&2; exit 1; }
+    LINUX_PGO_USE="$(cd "$PGO_USE" && pwd -P)"
+    echo "PGO: Linux x86_64 built with the counts in $LINUX_PGO_USE (linux-arm64 without)"
+fi
+# (the same for Windows, with the counts made on a Windows PC: PGO_USE_WINDOWS=folder, or PGO_WINDOWS=0)
+WINDOWS_PGO_USE=""
+if [ "${PGO_WINDOWS:-}" = 0 ]; then
+    ! has_target windows || echo "PGO: Windows ships without a profile (PGO_WINDOWS=0)"
+elif has_target windows && { [ "${PGO:-}" = 1 ] || [ -n "${PGO_USE_WINDOWS:-}" ]; }; then
+    if [ -z "${PGO_USE_WINDOWS:-}" ]; then
+        echo "error: PGO=1 with no Windows counts: PGO_USE_WINDOWS=<the folder of run-pgo-windows.ps1's raw.zip, unpacked> (docs/RELEASING.md), or PGO_WINDOWS=0 to ship Windows without a profile" >&2
+        exit 1
+    fi
+    [ -d "$PGO_USE_WINDOWS" ] || { echo "error: no folder $PGO_USE_WINDOWS (PGO_USE_WINDOWS)" >&2; exit 1; }
+    WINDOWS_PGO_USE="$(cd "$PGO_USE_WINDOWS" && pwd -P)"
+    echo "PGO: Windows built with the counts in $WINDOWS_PGO_USE"
+fi
+# (the source's commit, for what a container cannot read itself: a worktree's .git is outside it)
+SOURCE_COMMIT="$(git rev-parse HEAD 2>/dev/null || echo unknown)$(git diff --quiet HEAD -- . ':!work' ':!build' 2>/dev/null || echo '+changes')"
+
 [ "${NO_AUDIT:-}" = 1 ] || [ ! -x tools/audit.sh ] || step "audit" tools/audit.sh
 
 # (CCACHE_BASE, if set: the folder each container keeps its per-target caches in, mounted at /ccache)
@@ -59,11 +96,19 @@ for gen in work/*/gen; do
     target="$(cd "$gen" && pwd -P)"
     LINKED="$LINKED $(dirname "$target")"
 done
-# a release script in a build image: $1 the image, $2 the script, the rest more arguments for docker run
+# a release script in a build image: $1 the image, $2 the script, the rest more arguments for docker run (IMAGE_PGO_USE:
+# the folder of the system's counts, given as PGO_USE: inside the worktree at its path there, or mounted read only)
 in_image() {
     image=$1 script=$2; shift 2
     set -- docker run --rm "$@" -e GAMES="${GAMES:-}" -e NO_GAME_CODE="${NO_GAME_CODE:-}" -e NO_CCACHE="${NO_CCACHE:-}" \
-        -e HEADLESS="${HEADLESS:-}" -e TRANSLATED="${TRANSLATED:-}"
+        -e HEADLESS="${HEADLESS:-}" -e TRANSLATED="${TRANSLATED:-}" -e SOURCE_COMMIT="$SOURCE_COMMIT" \
+        -e PGO_GENERATE="${PGO_GENERATE:-}"
+    if [ -n "${IMAGE_PGO_USE:-}" ]; then
+        case "$IMAGE_PGO_USE/" in
+            "$(pwd -P)"/*) set -- "$@" -e PGO_USE="/src/${IMAGE_PGO_USE#"$(pwd -P)"/}" ;;
+            *) set -- "$@" -v "$IMAGE_PGO_USE:$IMAGE_PGO_USE:ro" -e PGO_USE="$IMAGE_PGO_USE" ;;
+        esac
+    fi
     [ -z "${CMAKE_BUILD_PARALLEL_LEVEL:-}" ] || set -- "$@" -e CMAKE_BUILD_PARALLEL_LEVEL="$CMAKE_BUILD_PARALLEL_LEVEL"
     [ -z "${CCACHE_BASE:-}" ] || set -- "$@" -v "$CCACHE_BASE":/ccache -e CCACHE_BASE=/ccache
     for folder in $LINKED; do
@@ -105,11 +150,13 @@ if has_target macos; then
     step "macos" tools/release/macos.sh
 fi
 if has_target linux-x86_64; then
+    IMAGE_PGO_USE="$LINUX_PGO_USE"
     if [ "$HOST_ARCH" = "arm64" ] || [ "$HOST_ARCH" = "aarch64" ]; then
         step "linux-x86_64 (native cross)" in_image spelunkomp-build-x86_64 tools/release/linux.sh
     else
         step "linux-x86_64" in_image spelunkomp-build tools/release/linux.sh --platform linux/amd64
     fi
+    IMAGE_PGO_USE=""
 fi
 if has_target linux-arm64; then
     step "linux-arm64" in_image spelunkomp-build-arm64 tools/release/linux.sh --platform linux/arm64
@@ -119,11 +166,13 @@ if has_target android; then
     step "android" env RELEASE=1 tools/release/android.sh
 fi
 if has_target windows; then
+    IMAGE_PGO_USE="$WINDOWS_PGO_USE"
     if [ "$HOST_ARCH" = "arm64" ] || [ "$HOST_ARCH" = "aarch64" ]; then
         step "windows-x64 (native cross)" in_image spelunkomp-build-arm64 tools/release/windows.sh --platform linux/arm64
     else
         step "windows-x64" in_image spelunkomp-build tools/release/windows.sh --platform linux/amd64
     fi
+    IMAGE_PGO_USE=""
 fi
 
 # SHA256SUMS.txt: on a run of the four archives (and the app, when android is a target), or TARGETS=sums once every

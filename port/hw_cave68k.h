@@ -13,6 +13,7 @@
 #include "gpu68k.h"
 #include "hud.h"
 #include "png_write.h"
+#include "scene.h"
 
 #include <SDL3/SDL.h>
 
@@ -93,7 +94,7 @@ struct Hw {
         return useGpu;
     }
     void Attach() {
-        board->video.native = useGpu ? &frame : nullptr;
+        board->video.native = &frame; // (the GPU's, and the scene export's: what the frame on show was drawn from)
         board->video.rasterize = !useGpu || checkVideo;
         if (useGpu) {
             board->Redraw(); // (the frame as the board is now, for the first picture)
@@ -129,6 +130,124 @@ struct Hw {
         frameLatches = frame.spritesLatched;
         gpu.Render(board->video, frame);
         maxSprites = std::max(maxSprites, gpu.spritesDrawn);
+    }
+
+    // ---- The scene export (port/scene.h): the frame on show taken apart, from what it was drawn from ----
+    // Back to front, as the chips put them: for each priority from 0, the sprites of that priority (a sprite goes below
+    // the tiles of its own), then each tile layer's tiles of that priority, the layers in the order they rank in
+    bool TakeScene(Scene &scene, int entries) {
+        if (frame.pictures == 0 || frame.palette.size() < 0x10000) {
+            return false;
+        }
+        const CaveVideo &video = board->video;
+        CaveVideo::Split split;
+        video.SplitFrame(frame, split);
+        const size_t size = static_cast<size_t>(kWidth) * kHeight;
+        scene.width = kWidth;
+        scene.height = kHeight;
+        scene.frame = board->frame;
+        scene.backdrop = split.background & 0xFFFFFFu;
+        scene.picture.resize(size);
+        ReadScreen(scene.picture.data());
+        // (which priorities each layer's tiles and the sprites have: a layer is named for its priority only when it has more than one)
+        unsigned tilePriorities[CaveVideo::kLayers] = {}, spritePriorities = 0;
+        for (size_t at = 0; at < size; at++) {
+            for (int n = 0; n < split.layerCount; n++) {
+                if (!split.tiles[n].empty() && split.tiles[n][at]) {
+                    tilePriorities[n] |= 1u << split.tilePriority[n][at];
+                }
+            }
+            if (split.sprites[at]) {
+                spritePriorities |= 1u << split.spritePriority[at];
+            }
+        }
+        auto many = [](unsigned bits) { return (bits & (bits - 1)) != 0; };
+        std::string spriteLayer[4];
+        scene.layers.clear();
+        for (int priority = 0; priority < 4; priority++) {
+            if ((spritePriorities >> priority) & 1) {
+                SceneLayer layer;
+                layer.name = many(spritePriorities) ? "sprites-p" + std::to_string(priority) : "sprites";
+                layer.kind = "objects";
+                layer.tile = 16;
+                layer.extra = "\"priority\": " + std::to_string(priority);
+                layer.Clear(size);
+                for (size_t at = 0; at < size; at++) {
+                    if (split.sprites[at] && split.spritePriority[at] == priority) {
+                        layer.Set(at, split.sprites[at] & 0xFFFFFFu);
+                    }
+                }
+                spriteLayer[priority] = layer.name;
+                scene.layers.push_back(std::move(layer));
+            }
+            for (int k = 0; k < split.layerCount; k++) {
+                const int n = split.tileOrder[k];
+                if (!((tilePriorities[n] >> priority) & 1)) {
+                    continue;
+                }
+                SceneLayer layer;
+                layer.name = "layer" + std::to_string(n + 1) + (many(tilePriorities[n]) ? "-p" + std::to_string(priority) : "");
+                layer.kind = "scroll";
+                layer.tile = split.big[n] ? 16 : 8;
+                layer.extra = "\"chipLayer\": " + std::to_string(n) + ", \"priority\": " + std::to_string(priority);
+                layer.Clear(size);
+                for (size_t at = 0; at < size; at++) {
+                    if (split.tiles[n][at] && split.tilePriority[n][at] == priority) {
+                        layer.Set(at, split.tiles[n][at] & 0xFFFFFFu);
+                    }
+                }
+                scene.layers.push_back(std::move(layer));
+            }
+        }
+        // The sprites each by itself, front to back (the chip draws the list in order, a later sprite over an earlier)
+        scene.entries.clear();
+        scene.entryMap.clear();
+        if (entries != kSceneNoEntries) {
+            std::vector<int> place(frame.sprites.size(), -1);
+            std::vector<int> x0(frame.sprites.size(), kWidth), y0(frame.sprites.size(), kHeight), x1(frame.sprites.size(), -1),
+                y1(frame.sprites.size(), -1);
+            for (size_t at = 0; at < size; at++) {
+                if (const int32_t e = split.spriteEntry[at]; e >= 0) {
+                    const int x = static_cast<int>(at % kWidth), y = static_cast<int>(at / kWidth);
+                    x0[e] = std::min(x0[e], x);
+                    x1[e] = std::max(x1[e], x);
+                    y0[e] = std::min(y0[e], y);
+                    y1[e] = std::max(y1[e], y);
+                }
+            }
+            for (size_t n = frame.sprites.size(); n-- > 0;) {
+                const NativeSprite &s = frame.sprites[n];
+                SceneEntry e;
+                e.entry = static_cast<int>(n);
+                e.tile = s.code >> 8;
+                e.colour = static_cast<int>((s.attributes >> 8) & 0x3F);
+                e.level = static_cast<int>((s.attributes >> 14) & 3);
+                e.attributes = s.attributes;
+                e.layer = spriteLayer[e.level];
+                if (entries == kSceneEntryPictures) {
+                    if (!video.SpriteAlone(frame, n, e.x, e.y, e.w, e.h, e.pixels)) {
+                        continue;
+                    }
+                } else {
+                    if (x1[n] < 0) {
+                        continue; // (a clip's frame: what of it is in front)
+                    }
+                    e.x = x0[n], e.y = y0[n], e.w = x1[n] - x0[n] + 1, e.h = y1[n] - y0[n] + 1;
+                }
+                if (e.layer.empty()) {
+                    continue; // (nothing of it on the screen)
+                }
+                place[n] = static_cast<int>(scene.entries.size());
+                scene.entries.push_back(std::move(e));
+            }
+            scene.entryMap.assign(size, 0);
+            for (size_t at = 0; at < size; at++) {
+                if (const int32_t e = split.spriteEntry[at]; e >= 0 && place[e] >= 0) {
+                    scene.entryMap[at] = static_cast<uint32_t>(place[e] + 1);
+                }
+            }
+        }
+        return true;
     }
 
     // ---- The training tools: the practice point and rewind, each moment the whole board ----

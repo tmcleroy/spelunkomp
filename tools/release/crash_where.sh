@@ -3,8 +3,8 @@
 # Copyright (C) 2026 Tommy McLeroy. Part of spelunkomp; from cps2recomp's.
 #
 # A Windows crash log's calls ("ddpdoj.exe+0x40ba8") as the functions they are in, from the same build's unstripped
-# program (build/release-windows/symbols/<game>.exe, kept by windows.sh):
-#   tools/release/crash_where.sh build/release-windows/symbols/ddpdoj.exe 0x40ba8 0x1307 ...
+# program (build/release-windows-clang/symbols/<game>.exe, kept by windows.sh; -gcc for WINDOWS_CC=gcc's):
+#   tools/release/crash_where.sh build/release-windows-clang/symbols/ddpdoj.exe 0x40ba8 0x1307 ...
 # (in the build image, for MinGW's nm: IMAGE=spelunkomp-build PLATFORM=linux/amd64 for the amd64 one; lines of other
 # programs, SDL3.dll and Windows', are not ours)
 set -eu
