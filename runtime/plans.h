@@ -30,6 +30,13 @@ struct PlanBlock {
 // The game's (work/<id>/gen/plans.cpp; runtime/no_plans.cpp: none)
 const PlanBlock *PlanBlocks(size_t &count);
 
+// (one code reader for every site, so AccessDataOut is one function)
+struct PlanCode {
+    SH3 *c;
+    uint16 operator()(uint32 p) const {
+        return c->TimingCode(p);
+    }
+};
 // (ID 0 is the planted fault's, SPELUNK_PLANT_PLAN=1: its tail one cycle longer, for the shadow to find)
 template <const PlanConst &P, int ID>
 bool PlannedAccess(SH3 &c, uint32 a, uint32 bytes, bool write, uint32 &got) {
@@ -37,10 +44,11 @@ bool PlannedAccess(SH3 &c, uint32 a, uint32 bytes, bool write, uint32 &got) {
     if (m.from != P.from || m.lastLoad != P.lastLoad) {
         return false;
     }
-    auto code = [&c](uint32 p) -> uint16 { return c.TimingCode(p); };
-    got = m.AccessCore(c.timingPaths, c.at, a, bytes, write, c.cycles, code, [&]() __attribute__((always_inline)) {
-        return m.Run(P.fetch, P.fetches, P.op, P.ops, P.tail + (ID == 0 ? c.plantPlan : 0u), P.span, P.info, false, c.inSlot, c.cycles);
-    });
+    const bool streamed = c.at != m.lastInsn || c.cycles != m.lastTime;
+    const uint32 extra = streamed ? m.Run(P.fetch, P.fetches, P.op, P.ops, P.tail + (ID == 0 ? c.plantPlan : 0u), P.span, P.info,
+                                          false, c.inSlot, c.cycles)
+                                  : 0;
+    got = m.AccessDataOut(c.timingPaths, c.at, a, bytes, write, c.cycles, extra, streamed, PlanCode{&c});
     return true;
 }
 template <const PlanConst &P, int ID>
@@ -49,8 +57,7 @@ bool PlannedTaken(SH3 &c, uint32 branch, uint32 target, uint32 &got) {
     if (m.from != P.from || m.lastLoad != P.lastLoad) {
         return false;
     }
-    auto code = [&c](uint32 p) -> uint16 { return c.TimingCode(p); };
-    got = m.TakenCore(branch, target, c.cycles, code, [&]() __attribute__((always_inline)) {
+    got = m.TakenCore(branch, target, c.cycles, PlanCode{&c}, [&]() __attribute__((always_inline)) {
         return m.Run(P.fetch, P.fetches, P.op, P.ops, P.tail + (ID == 0 ? c.plantPlan : 0u), P.span, P.info, true, false, c.cycles);
     });
     return true;
