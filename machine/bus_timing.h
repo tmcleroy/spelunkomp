@@ -32,7 +32,9 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <cstdlib>
 #include <cstring>
+#include <memory>
 #include <vector>
 
 #define SPELUNK_TIMING_HOT __attribute__((always_inline)) inline
@@ -735,7 +737,7 @@ struct Sh3Timing {
 // written; which paths are kept changes no count. So this is not part of the state (a state loaded forgets them),
 // and each block of main RAM a path read keeps the time of its last write, which a kept path checks.
 struct Sh3Paths {
-    static constexpr uint32_t kMemoBits = 13, kMemos = 1u << kMemoBits, kMemoSteps = 16, kMemoBlocks = 4;
+    static constexpr uint32_t kMemoSteps = 16, kMemoBlocks = 4, kHotSteps = 2;
     static constexpr uint32_t kBlockShift = 7, kRamBytes = 0x01000000u;
     // (the SH3's main RAM, as the walk reads it: elsewhere is read as 0, which no write changes)
     static bool IsRam(uint32_t a) {
@@ -744,14 +746,22 @@ struct Sh3Paths {
     static uint32_t Block(uint32_t a) {
         return (a & (kRamBytes - 1)) >> kBlockShift;
     }
-    struct Memo {
+    // A memo is one cache line, the two of a set side by side: a plan of up to kHotSteps fetches and ops is in it,
+    // a longer one in the cold array at the same place
+    struct alignas(64) Memo {
         uint32_t from, to, stamp;
         uint32_t generation; // (kept while it is the table's: Forget starts a new one)
+        Sh3Timing::PathInfo info;
         uint8_t blocks;
         uint8_t fetches, ops;
+        uint8_t recent; // (way 0's: the set's place used last)
         uint16_t tail, span;
-        Sh3Timing::PathInfo info;
         uint32_t block[kMemoBlocks];
+        uint32_t fetch[kHotSteps];
+        Sh3Timing::Plan::Op op[kHotSteps];
+    };
+    static_assert(sizeof(Memo) == 64, "a memo is one cache line");
+    struct Cold {
         uint32_t fetch[kMemoSteps];
         Sh3Timing::Plan::Op op[2 * kMemoSteps];
     };
@@ -777,9 +787,17 @@ struct Sh3Paths {
             block[blocks++] = b;
         }
     };
-    std::vector<Memo> memos = std::vector<Memo>(kMemos);
-    std::vector<uint8_t> recent = std::vector<uint8_t>(kMemos / 2); // (each set's place used last)
-    uint32_t last = 0; // (the memo found last)
+    // (the table's size: places for 2^bits paths, 32,768 (2 MB of lines) unless SPELUNK_MEMO_BITS says 13 or 14:
+    // finding a path is mostly waiting on its line, and a larger table finds more of them)
+    static uint32_t Bits() {
+        const char *e = std::getenv("SPELUNK_MEMO_BITS");
+        const int b = e != nullptr ? std::atoi(e) : 15;
+        return b >= 13 && b <= 15 ? static_cast<uint32_t>(b) : 15;
+    }
+    uint32_t bits = Bits();
+    std::vector<Memo> memos = std::vector<Memo>(size_t{1} << bits);
+    // (not cleared: a place's cold plan is read only after Keep wrote it, so the pages of those never used stay unmapped)
+    std::unique_ptr<Cold[]> cold = std::unique_ptr<Cold[]>(new Cold[size_t{1} << bits]);
     std::vector<uint32_t> written = std::vector<uint32_t>(kRamBytes >> kBlockShift); // (each block's last write)
     uint32_t clock = 1;
     uint32_t generation = 1; // (the kept paths': a memo of another is not kept)
@@ -827,28 +845,25 @@ struct Sh3Paths {
         written[Block(a + bytes - 1)] = clock;
     }
     // (two places for each path, in a set of the table: the one used less recently is replaced)
-    static uint32_t Set(uint32_t from, uint32_t to, int8_t lastLoad) {
+    uint32_t Set(uint32_t from, uint32_t to, int8_t lastLoad) const {
         const uint32_t h = from * 0x9E3779B1u + to * 0x85EBCA77u + static_cast<uint32_t>(lastLoad + 1) * 0xC2B2AE3Du;
-        return (h ^ h >> 15) * 0x2C1B3C6Du >> (32 - kMemoBits + 1);
+        return (h ^ h >> 15) * 0x2C1B3C6Du >> (32 - bits + 1);
     }
     bool Holds(const Memo &m, uint32_t from, uint32_t to, int8_t lastLoad) const {
         return m.generation == generation && m.from == from && m.to == to && m.info.lastLoad == lastLoad;
     }
     const Memo *Find(uint32_t from, uint32_t to, int8_t lastLoad) { // (from's bit 0: jumped to; to's: a branch)
-        const Memo *m = &memos[last];
-        if (!Holds(*m, from, to, lastLoad)) { // (the one found last: a loop's, as often as not)
-            const uint32_t set = Set(from, to, lastLoad);
-            uint32_t way = 0;
-            if (!Holds(memos[2 * set], from, to, lastLoad)) {
-                if (!Holds(memos[2 * set + 1], from, to, lastLoad)) {
-                    return nullptr;
-                }
-                way = 1;
+        const uint32_t set = Set(from, to, lastLoad);
+        Memo *const pair = &memos[2 * set];
+        uint32_t way = 0;
+        if (!Holds(pair[0], from, to, lastLoad)) {
+            if (!Holds(pair[1], from, to, lastLoad)) {
+                return nullptr;
             }
-            recent[set] = static_cast<uint8_t>(way);
-            last = 2 * set + way;
-            m = &memos[last];
+            way = 1;
         }
+        pair[0].recent = static_cast<uint8_t>(way);
+        const Memo *m = &pair[way];
         for (uint32_t i = 0; i < m->blocks; i++) {
             if (written[m->block[i]] > m->stamp) {
                 return nullptr;
@@ -856,16 +871,24 @@ struct Sh3Paths {
         }
         return m;
     }
+    // (a found memo's plan)
+    const uint32_t *Fetches(const Memo *m) const {
+        return m->fetches <= kHotSteps ? m->fetch : cold[static_cast<size_t>(m - memos.data())].fetch;
+    }
+    const Sh3Timing::Plan::Op *Ops(const Memo *m) const {
+        return m->ops <= kHotSteps ? m->op : cold[static_cast<size_t>(m - memos.data())].op;
+    }
     void Keep(uint32_t from, uint32_t to, const Sh3Timing::PathInfo &info, const Sh3Timing::Plan &plan, const Watching &watching) {
         if (info.count > kMemoSteps || watching.tooMany || plan.tail > 0xFFFF || plan.span > 0xFFFF) {
             return;
         }
         const uint32_t set = Set(from, to, info.lastLoad);
-        const uint32_t way = Holds(memos[2 * set], from, to, info.lastLoad)       ? 0
-                             : Holds(memos[2 * set + 1], from, to, info.lastLoad) ? 1
-                                                                                  : 1 - recent[set];
-        recent[set] = static_cast<uint8_t>(way);
-        Memo &m = memos[2 * set + way];
+        Memo *const pair = &memos[2 * set];
+        const uint32_t way = Holds(pair[0], from, to, info.lastLoad)   ? 0
+                             : Holds(pair[1], from, to, info.lastLoad) ? 1
+                                                                       : 1u - pair[0].recent;
+        pair[0].recent = static_cast<uint8_t>(way);
+        Memo &m = pair[way];
         m.generation = generation;
         m.from = from;
         m.to = to;
@@ -877,8 +900,9 @@ struct Sh3Paths {
         m.ops = static_cast<uint8_t>(plan.ops);
         m.tail = static_cast<uint16_t>(plan.tail);
         m.span = static_cast<uint16_t>(plan.span);
-        std::memcpy(m.fetch, plan.fetch, plan.fetches * sizeof plan.fetch[0]);
-        std::memcpy(m.op, plan.op, plan.ops * sizeof plan.op[0]);
+        Cold &c = cold[2 * set + way];
+        std::memcpy(plan.fetches <= kHotSteps ? m.fetch : c.fetch, plan.fetch, plan.fetches * sizeof plan.fetch[0]);
+        std::memcpy(plan.ops <= kHotSteps ? m.op : c.op, plan.op, plan.ops * sizeof plan.op[0]);
     }
 };
 
@@ -886,7 +910,7 @@ template <typename Code>
 inline uint32_t Sh3Timing::Stream(Sh3Paths &paths, uint32_t insn, bool branch, bool cpuSlot, uint64_t now, Code code) {
     // (the path depends on the code alone: a path found before, its code not written since, is the same)
     if (const Sh3Paths::Memo *memo = paths.Find(from, insn | (branch ? 1u : 0u), lastLoad)) {
-        return Run(memo->fetch, memo->fetches, memo->op, memo->ops, memo->tail, memo->span, memo->info, branch, cpuSlot, now);
+        return Run(paths.Fetches(memo), memo->fetches, paths.Ops(memo), memo->ops, memo->tail, memo->span, memo->info, branch, cpuSlot, now);
     }
     return StreamNew(paths, insn, branch, cpuSlot, now, code);
 }
