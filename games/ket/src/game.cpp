@@ -4,6 +4,9 @@
 #include "../../../runtime/shmup.h"
 #include "ket.h"
 
+#include <algorithm>
+#include <string>
+
 namespace spelunk {
 
 namespace {
@@ -15,6 +18,15 @@ namespace {
         const size_t mask = board.ram.size() - 1;
         board.ram[address & mask] = static_cast<uint8_t>(value >> 8);
         board.ram[(address + 1) & mask] = static_cast<uint8_t>(value);
+    }
+    // While a player's game is played, not the attract show's demonstration, nor the title (the stage task's kind: ket.h)
+    bool Playing(const Board &board) {
+        using namespace ket;
+        return Word(board, kTasks) == kStageTask && !Word(board, kDemo) && (Word(board, kShips - 1) & 0xFF) != 0xFF;
+    }
+    // The chips the game's kills draw on now: the small number, and from the boss's warning on the big one (ket.h)
+    bool ChipsOnTotal(const Board &board) {
+        return (Word(board, ket::kBossOn) & ket::kBossWarned) != 0;
     }
     // The boxes the game's hit test (0B02FC) uses, read as it reads them
     void HitBoxes(const Board &board, std::vector<HitBox> &out) {
@@ -137,7 +149,42 @@ const Game &ThisGame() {
         f.bossBits = ket::kBossWarned;
         f.hitBoxes = HitBoxes;
         f.hitKinds |= 1u << HitBox::Ground | 1u << HitBox::Shot;
-        return shmup::MakeGame(ket::kCredits, f);
+        Game g = shmup::MakeGame(ket::kCredits, f);
+        // (the M2-style gadgets, port/gadgets.h: the chips, the loop; and the score and stage, for the score by stage)
+        using Kind = Gadget::Kind;
+        g.gadgets = {
+            {"CHIPS", Kind::Meter,
+             [](const Board &board) {
+                 using namespace ket;
+                 if (!Playing(board)) {
+                     return std::string();
+                 }
+                 return std::string(ChipsOnTotal(board) ? "TOTAL " : "STOCK ") +
+                        std::to_string(Word(board, ChipsOnTotal(board) ? kChipTotal : kChipStock)) + "\n" +
+                        (ChipsOnTotal(board) ? "STOCK " + std::to_string(Word(board, kChipStock)) : "TOTAL " + std::to_string(Word(board, kChipTotal)));
+             },
+             [](const Board &board, int &value, int &most) {
+                 using namespace ket;
+                 value = Word(board, ChipsOnTotal(board) ? kChipTotal : kChipStock);
+                 most = value <= 100 ? 100 : value <= 999 ? kChipStockMost : kChipTotalMost; // (999 and 9999 at most)
+                 return Playing(board);
+             },
+             0xFF40D0FFu},
+            {"LOOP", Kind::Words, [](const Board &board) {
+                 return Playing(board) ? std::string(Word(board, ket::kLoop) ? "SECOND LOOP" : "FIRST LOOP") : std::string();
+             }},
+        };
+        g.score = [](const Board &board) -> long long {
+            using namespace ket;
+            if (!Playing(board)) {
+                return -1;
+            }
+            return (static_cast<long long>(Word(board, kScore1)) << 16) | Word(board, kScore1 + 2);
+        };
+        // (the first loop's five stages, then the second's: the stage word begins again at 0)
+        g.stage = [](const Board &board) { return Playing(board) ? Word(board, ket::kLoop) * 5 + Word(board, ket::kStage) : -1; };
+        g.stageNames = {"1-1", "1-2", "1-3", "1-4", "1-5", "2-1", "2-2", "2-3", "2-4", "2-5"};
+        return g;
     }();
     return game;
 }
