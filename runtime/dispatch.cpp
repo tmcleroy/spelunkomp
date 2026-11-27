@@ -138,30 +138,44 @@ void SH3::FollowBlock(uint32 start, unsigned steps) {
     }
 }
 
-// (runtime/plans.h: a plan run as data, the same for every site)
-__attribute__((noinline)) bool PlannedAccessDyn(SH3 &c, const PlanConst &p, uint32 plant, uint32 a, uint32 bytes, bool write, uint32 &got) {
-    Sh3Timing &m = c.memoryTiming;
+// (runtime/plans.h: a plan run as data, the same for every site; one code reader, so AccessDataOut is one function)
+namespace {
+    struct PlanCode {
+        SH3 *c;
+        uint16 operator()(uint32 p) const {
+            return c->TimingCode(p);
+        }
+    };
+}
+__attribute__((noinline)) bool SH3::PlannedAccess(sint32 plan, uint32 a, uint32 bytes, bool write, uint32 &got) {
+    const PlanTables &t = Plans();
+    const PlanData &p = t.plans[plan];
+    Sh3Timing &m = memoryTiming;
     if (m.from != p.from || m.lastLoad != p.lastLoad) {
         return false;
     }
-    const bool streamed = c.at != m.lastInsn || c.cycles != m.lastTime;
-    const uint32 extra = streamed ? m.Run(p.fetch, p.fetches, p.op, p.ops, p.tail + plant, p.span, p.info, false, c.inSlot, c.cycles) : 0;
-    got = m.AccessDataOut(c.timingPaths, c.at, a, bytes, write, c.cycles, extra, streamed, PlanCode{&c});
+    const uint32 tail = p.tail + (plan == 0 ? plantPlan : 0u);
+    const bool streamed = at != m.lastInsn || cycles != m.lastTime;
+    const uint32 extra = streamed ? m.Run(t.fetch + p.fetchAt, p.fetches, t.op + p.opAt, p.ops, tail, p.span, p.info, false, inSlot, cycles) : 0;
+    got = m.AccessDataOut(timingPaths, at, a, bytes, write, cycles, extra, streamed, PlanCode{this});
     return true;
 }
-__attribute__((noinline)) bool PlannedTakenDyn(SH3 &c, const PlanConst &p, uint32 plant, uint32 branch, uint32 target, uint32 &got) {
-    Sh3Timing &m = c.memoryTiming;
+__attribute__((noinline)) bool SH3::PlannedTaken(sint32 plan, uint32 branch, uint32 target, uint32 &got) {
+    const PlanTables &t = Plans();
+    const PlanData &p = t.plans[plan];
+    Sh3Timing &m = memoryTiming;
     if (m.from != p.from || m.lastLoad != p.lastLoad) {
         return false;
     }
-    got = m.TakenCore(branch, target, c.cycles, PlanCode{&c}, [&]() __attribute__((always_inline)) {
-        return m.Run(p.fetch, p.fetches, p.op, p.ops, p.tail + plant, p.span, p.info, true, false, c.cycles);
+    const uint32 tail = p.tail + (plan == 0 ? plantPlan : 0u);
+    got = m.TakenCore(branch, target, cycles, PlanCode{this}, [&]() __attribute__((always_inline)) {
+        return m.Run(t.fetch + p.fetchAt, p.fetches, t.op + p.opAt, p.ops, tail, p.span, p.info, true, false, cycles);
     });
     return true;
 }
 
 void SH3::InterpretBlock() {
-    planSlots = nullptr; // (no plans for the interpreter: the generic path)
+    planIndex = nullptr; // (no plans for the interpreter: the generic path)
     SPELUNK_TS(g_timingStats.curStart = 0;)
     if (recording && (IsRam(PC) || IsFlash(PC))) [[unlikely]] {
         if (RecordBlock(PC, false) && recordStatic) {
@@ -310,12 +324,13 @@ void SH3::RunBlocks(uint64 stop) {
                     WaitAhead(*t);
                 }
                 SPELUNK_TS(g_timingStats.curStart = t->block->address; g_timingStats.curEnd = t->block->address + t->block->length;)
-                planSlots = t->planSlots;
+                planIndex = t->planIndex;
+                planSites = t->planSites;
                 planStart = t->block->address;
                 planBytes = t->planBytes;
                 codeWritten = false;
                 t->block->run(*this);
-                planSlots = nullptr;
+                planIndex = nullptr;
                 nativeBlocks++;
             } else {
                 if (countInterpreted) [[unlikely]] {
@@ -349,12 +364,13 @@ void SH3::RunOneBlock(bool native) {
     if (mode == Mode::Native) {
         if (Translation *t = Lookup(PC)) {
             SPELUNK_TS(g_timingStats.curStart = t->block->address; g_timingStats.curEnd = t->block->address + t->block->length;)
-            planSlots = t->planSlots;
+            planIndex = t->planIndex;
+            planSites = t->planSites;
             planStart = t->block->address;
             planBytes = t->planBytes;
             codeWritten = false;
             t->block->run(*this);
-            planSlots = nullptr;
+            planIndex = nullptr;
             nativeBlocks++;
             return;
         }
@@ -388,28 +404,27 @@ void SH3::InstallTranslations() {
         t.next = head;
         head = &t;
     }
-    // (the plans compiled in, runtime/plans.h, each given to the translation of its block: the same address and
-    // length; SPELUNK_NO_PLANS=1: none, every event the generic path's)
+    // (the plans, runtime/plans.h, each block's given to the translation of that block: the same address and length;
+    // the blocks are sorted by address. SPELUNK_NO_PLANS=1: none, every event the generic path's)
     plantPlan = getenv("SPELUNK_PLANT_PLAN") ? 1u : 0u;
-    size_t planCount = 0;
-    const PlanBlock *plans = PlanBlocks(planCount);
-    // (SPELUNK_PLANS_TOP=N: the N busiest blocks' plans only, tools/plans/make_plans.py writing them busiest first)
-    if (const char *top = getenv("SPELUNK_PLANS_TOP")) {
-        planCount = std::min(planCount, static_cast<size_t>(strtoul(top, nullptr, 10)));
-    }
+    const PlanTables &plans = Plans();
     size_t given = 0;
-    for (size_t i = 0; i < planCount && !getenv("SPELUNK_NO_PLANS"); i++) {
+    if (plans.blockCount && !getenv("SPELUNK_NO_PLANS")) {
         for (Translation &t : m_translations) {
-            if (t.block->address == plans[i].start && t.block->length == plans[i].bytes) {
-                t.planSlots = getenv("SPELUNK_PLANS_DATA") ? plans[i].dataSlots : plans[i].slots;
-                t.planBytes = plans[i].bytes;
+            const PlanBlock *end = plans.blocks + plans.blockCount;
+            const PlanBlock *b = std::lower_bound(plans.blocks, end, t.block->address,
+                                                  [](const PlanBlock &x, uint32 a) { return x.start < a; });
+            if (b != end && b->start == t.block->address && b->bytes == t.block->length) {
+                t.planIndex = b->index;
+                t.planSites = b->sites;
+                t.planBytes = b->bytes;
                 given++;
             }
         }
     }
-    if (planCount) {
-        fprintf(stderr, "plans: %zu of %zu blocks' plans in use%s%s\n", given, planCount, getenv("SPELUNK_NO_PLANS") ? " (SPELUNK_NO_PLANS)" : "",
-                getenv("SPELUNK_PLANS_DATA") ? ", as data (SPELUNK_PLANS_DATA)" : ", their own code");
+    if (plans.blockCount) {
+        fprintf(stderr, "plans: %zu of %zu blocks' plans in use (%zu plans)%s\n", given, plans.blockCount, plans.planCount,
+                getenv("SPELUNK_NO_PLANS") ? " (SPELUNK_NO_PLANS)" : "");
     }
 }
 

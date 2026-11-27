@@ -5,9 +5,9 @@
 
 namespace spelunk {
 
-const PlanBlock *PlanBlocks(size_t &count) {
-    count = 0;
-    return nullptr;
+const PlanTables &Plans() {
+    static const PlanTables none;
+    return none;
 }
 
 } // namespace spelunk

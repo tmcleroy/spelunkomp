@@ -155,33 +155,47 @@ public:
         std::memcpy(&op, ram + (p & (kRamSize - 2)), 2);
         return __builtin_bswap16(op);
     }
-    // The plans compiled into the translated code (runtime/plans.h): the running block's sites, a slot a halfword
-    // (null: the generic path), while its code is not written (codeWritten, NoteCodeWrite)
-    using PlannedAccessFn = bool (*)(SH3 &, uint32 a, uint32 bytes, bool write, uint32 &got);
-    using PlannedTakenFn = bool (*)(SH3 &, uint32 branch, uint32 target, uint32 &got);
-    struct PlanSlot {
-        PlannedAccessFn access[2];
-        PlannedTakenFn taken[2];
+    // The plans given to the translated code as data (runtime/plans.h): the running block's sites (a byte a halfword,
+    // planIndex: its site's number in planSites, one on; 0 the generic path), while its code is not written
+    // (codeWritten, NoteCodeWrite). A site: up to two plans for an access at that instruction, two for a branch taken
+    // there (the game's plan numbers, -1 none), each tried by its key
+    struct PlanSite {
+        sint32 access[2];
+        sint32 taken[2];
     };
-    const PlanSlot *planSlots = nullptr;
+    const uint8 *planIndex = nullptr;
+    const PlanSite *planSites = nullptr;
     uint32 planStart = 0, planBytes = 0;
     bool codeWritten = false;
-    uint32 plantPlan = 0; // (SPELUNK_PLANT_PLAN=1: one site's plan a cycle longer, for the shadow to find)
+    uint32 plantPlan = 0; // (SPELUNK_PLANT_PLAN=1: the game's plan 0 a cycle longer, for the shadow to find)
     uint64 plannedEvents = 0, genericEvents = 0;
     bool PlanAccess(uint32 a, uint32 bytes, bool write, uint32 &got) {
-        if (!planSlots || codeWritten || at - planStart >= planBytes) {
+        if (!planIndex || codeWritten || at - planStart >= planBytes) {
             return false;
         }
-        const PlanSlot &s = planSlots[(at - planStart) >> 1];
-        return s.access[0] && (s.access[0](*this, a, bytes, write, got) || (s.access[1] && s.access[1](*this, a, bytes, write, got)));
+        const uint8 i = planIndex[(at - planStart) >> 1];
+        if (!i) {
+            return false;
+        }
+        const PlanSite &s = planSites[i - 1];
+        return s.access[0] >= 0 && (PlannedAccess(s.access[0], a, bytes, write, got) ||
+                                    (s.access[1] >= 0 && PlannedAccess(s.access[1], a, bytes, write, got)));
     }
     bool PlanTaken(uint32 branch, uint32 target, uint32 &got) {
-        if (!planSlots || codeWritten || branch - planStart >= planBytes) {
+        if (!planIndex || codeWritten || branch - planStart >= planBytes) {
             return false;
         }
-        const PlanSlot &s = planSlots[(branch - planStart) >> 1];
-        return s.taken[0] && (s.taken[0](*this, branch, target, got) || (s.taken[1] && s.taken[1](*this, branch, target, got)));
+        const uint8 i = planIndex[(branch - planStart) >> 1];
+        if (!i) {
+            return false;
+        }
+        const PlanSite &s = planSites[i - 1];
+        return s.taken[0] >= 0 && (PlannedTaken(s.taken[0], branch, target, got) ||
+                                   (s.taken[1] >= 0 && PlannedTaken(s.taken[1], branch, target, got)));
     }
+    // (runtime/dispatch.cpp: the plan run, if its key is the model's)
+    bool PlannedAccess(sint32 plan, uint32 a, uint32 bytes, bool write, uint32 &got);
+    bool PlannedTaken(sint32 plan, uint32 branch, uint32 target, uint32 &got);
     void TimeAccess(uint32 a, uint32 bytes, bool write) {
         uint32 got;
         if (PlanAccess(a, bytes, write, got)) {
@@ -518,7 +532,8 @@ public:
         sint8 wait = -1;
         uint8 n0 = 0, m0 = 0, n1 = 0, m1 = 0, m3 = 0;
         uint32 waitCost = 0;
-        const PlanSlot *planSlots = nullptr; // (runtime/plans.h: its sites' plans; null, none)
+        const uint8 *planIndex = nullptr; // (runtime/plans.h: its sites' plans; null, none)
+        const PlanSite *planSites = nullptr;
         uint32 planBytes = 0;
     };
     // The frame's wait with the timing model off (docs/SLOWDOWN.md, "The poll loop"): the turns before the block's last
