@@ -137,7 +137,7 @@ void SH3::FollowBlock(uint32 start, unsigned steps) {
     }
 }
 
-// ---- The plans the translated sites keep (SitePlans, sh3.h) ----
+// ---- The plans the translated sites keep (PlanLine, BlockPlans: sh3.h) ----
 namespace {
     // (one code reader for every site, so AccessDataOut is one function)
     struct PlanCode {
@@ -147,9 +147,34 @@ namespace {
         }
     };
 }
+// A line more for the running block's plans: made, or made again twice as large (the index and the lines copied, the
+// running block's pointers refreshed); null when the block has 255 already
+static PlanLine *NewLine(SH3 &c, SH3::Translation &t) {
+    BlockPlans &bp = t.plans;
+    if (!bp.buffer || bp.used == bp.capacity) {
+        if (bp.capacity == 255) {
+            return nullptr;
+        }
+        const uint16 indexLines = bp.buffer ? bp.indexLines : static_cast<uint16>((c.planBytes / 2 + sizeof(PlanLine) - 1) / sizeof(PlanLine));
+        const uint16 capacity = bp.buffer ? static_cast<uint16>(std::min(bp.capacity * 2, 255)) : 4;
+        std::unique_ptr<PlanLine[]> grown(new PlanLine[indexLines + capacity]());
+        if (bp.buffer) {
+            std::memcpy(grown.get(), bp.buffer.get(), (bp.indexLines + bp.used) * sizeof(PlanLine));
+        }
+        bp.buffer = std::move(grown);
+        bp.indexLines = indexLines;
+        bp.capacity = capacity;
+        if (c.planBlock == &t) {
+            c.planIndex = bp.Index();
+            c.planLines = bp.Lines();
+        }
+    }
+    return &bp.Lines()[bp.used++];
+}
 // A site's plan, for an event that took the generic path: made as StreamNew makes it (Sh3Timing::DerivePlan) and kept
 // for the site if it may be: known, its key the block's (its start reached by a branch, or the last event in it), the
-// bytes it read the block's alone. A site keeps two keys; a third is not kept
+// bytes it read the block's alone, 3 fetches and 6 steps at most. Two keys a site of each kind; a third is not kept. A
+// site whose paths were refused twice makes none again (a line of kind 2 counts them)
 static void KeepPlan(SH3 &c, SH3::Translation &t, uint32 site, bool taken, uint32 from, sint8 lastLoad) {
     const uint32 start = c.planStart, end = c.planStart + c.planBytes;
     if (!(from == (start | 1u) || (!(from & 1u) && from > start && from <= site))) {
@@ -158,113 +183,82 @@ static void KeepPlan(SH3 &c, SH3::Translation &t, uint32 site, bool taken, uint3
     Sh3Timing::Made made;
     c.memoryTiming.DerivePlan(from, lastLoad, site, taken, PlanCode{&c}, made);
     const bool keep = made.info.known && made.lo != Sh3Timing::kNoLine && made.lo >= start && made.lo + made.bytes <= end &&
-                      made.plan.tail <= 0xFFFF && made.plan.span <= 0xFFFF;
-    if (!t.plans) {
-        t.plans = std::make_unique<SitePlans>();
-        t.plans->index.assign(c.planBytes / 2, 0); // (a block's slots made at its first plan, or its first path refused)
-    }
-    SitePlans &sp = *t.plans;
-    uint8 &at = sp.index[(site - start) / 2];
-    if (!at) {
-        if (sp.sites.size() >= 255) {
-            return; // (a byte names a site: a block's first 255 sites)
-        }
-        sp.sites.emplace_back();
-        at = static_cast<uint8>(sp.sites.size());
-    }
+                      made.plan.tail <= 0xFFFF && made.plan.span <= 0xFFFF && made.plan.fetches <= 3 && made.plan.ops <= 6;
+    const uint32 h = (site - start) / 2;
     if (!keep) {
-        sp.sites[at - 1].refused[taken ? 1 : 0]++; // (not made again for this site from the second on)
-        return;
-    }
-    sint32 *slot = taken ? sp.sites[at - 1].taken : sp.sites[at - 1].access;
-    const int free = slot[0] < 0 ? 0 : slot[1] < 0 ? 1 : -1;
-    if (free < 0) {
-        return;
-    }
-    SitePlans::Plan p{from, lastLoad, static_cast<uint8>(made.plan.fetches), static_cast<uint8>(made.plan.ops),
-                      static_cast<uint16>(made.plan.tail), static_cast<uint16>(made.plan.span), made.info,
-                      static_cast<uint32>(sp.fetch.size()), static_cast<uint32>(sp.op.size())};
-    sp.fetch.insert(sp.fetch.end(), made.plan.fetch, made.plan.fetch + made.plan.fetches);
-    sp.op.insert(sp.op.end(), made.plan.op, made.plan.op + made.plan.ops);
-    slot[free] = static_cast<sint32>(sp.plans.size());
-    sp.plans.push_back(p);
-}
-__attribute__((noinline)) uint32 SH3::SiteAccess(uint32 a, uint32 bytes, bool write) {
-    Translation &t = *planBlock;
-    const uint32 site = at;
-    const sint32 *slot = nullptr;
-    bool refused = false;
-    if (t.plans) {
-        if (const uint8 i = t.plans->index[(site - planStart) / 2]) {
-            SitePlans &sp = *t.plans;
-            slot = sp.sites[i - 1].access;
-            refused = sp.sites[i - 1].refused[0] >= 2;
-            for (int k = 0; k < 2 && slot[k] >= 0; k++) {
-                SitePlans::Plan &p = sp.plans[static_cast<size_t>(slot[k])];
-                if (memoryTiming.from == p.from && memoryTiming.lastLoad == p.lastLoad) {
-                    if (plantPlan == 1) [[unlikely]] {
-                        p.tail++; // (SPELUNK_PLANT_PLAN=1: the first plan served a cycle longer from now on, for the shadow to find)
-                        plantPlan = 2;
-                    }
-                    const bool streamed = at != memoryTiming.lastInsn || cycles != memoryTiming.lastTime;
-                    const uint32 extra = streamed ? memoryTiming.Run(sp.fetch.data() + p.fetchAt, p.fetches, sp.op.data() + p.opAt, p.ops, p.tail,
-                                                                     p.span, p.info, false, inSlot, cycles)
-                                                  : 0;
-                    plannedEvents++;
-                    return memoryTiming.AccessDataOut(timingPaths, at, a, bytes, write, cycles, extra, streamed, PlanCode{this});
-                }
+        // (the site's count of paths refused: its line of kind 2, made at the first)
+        PlanLine *count = nullptr;
+        if (t.plans.buffer) {
+            for (uint8 i = t.plans.Index()[h]; i && !count; i = t.plans.Lines()[i - 1].next) {
+                count = t.plans.Lines()[i - 1].kind == 2 ? &t.plans.Lines()[i - 1] : nullptr;
             }
         }
-    }
-    genericEvents++;
-    const uint32 from = memoryTiming.from;
-    const sint8 lastLoad = memoryTiming.lastLoad;
-    const bool streamed = at != memoryTiming.lastInsn || cycles != memoryTiming.lastTime;
-    const uint32 got = memoryTiming.Access(timingPaths, at, a, bytes, write, inSlot, cycles, [this](uint32 p) -> uint16 { return TimingCode(p); });
-    if (streamed && !refused && !(slot && slot[1] >= 0)) {
-        KeepPlan(*this, t, site, false, from, lastLoad); // (a site with room: its plan made for the next time)
-    }
-    return got;
-}
-__attribute__((noinline)) uint32 SH3::SiteTaken(uint32 branch, uint32 target) {
-    Translation &t = *planBlock;
-    const sint32 *slot = nullptr;
-    bool refused = false;
-    if (t.plans) {
-        if (const uint8 i = t.plans->index[(branch - planStart) / 2]) {
-            SitePlans &sp = *t.plans;
-            slot = sp.sites[i - 1].taken;
-            refused = sp.sites[i - 1].refused[1] >= 2;
-            for (int k = 0; k < 2 && slot[k] >= 0; k++) {
-                SitePlans::Plan &p = sp.plans[static_cast<size_t>(slot[k])];
-                if (memoryTiming.from == p.from && memoryTiming.lastLoad == p.lastLoad) {
-                    if (plantPlan == 1) [[unlikely]] {
-                        p.tail++;
-                        plantPlan = 2;
-                    }
-                    plannedEvents++;
-                    return memoryTiming.TakenCore(branch, target, cycles, PlanCode{this}, [&]() __attribute__((always_inline)) {
-                        return memoryTiming.Run(sp.fetch.data() + p.fetchAt, p.fetches, sp.op.data() + p.opAt, p.ops, p.tail, p.span, p.info,
-                                                true, false, cycles);
-                    });
-                }
+        if (!count) {
+            count = NewLine(c, t);
+            if (!count) {
+                return;
             }
+            *count = PlanLine{};
+            count->kind = 2;
+            count->next = t.plans.Index()[h];
+            t.plans.Index()[h] = static_cast<uint8>(count - t.plans.Lines() + 1);
         }
+        count->refused++;
+        return;
     }
+    PlanLine *l = NewLine(c, t);
+    if (!l) {
+        return;
+    }
+    *l = PlanLine{};
+    l->from = from;
+    l->lastLoad = lastLoad;
+    l->kind = taken ? 1 : 0;
+    l->fetches = static_cast<uint8>(made.plan.fetches);
+    l->ops = static_cast<uint8>(made.plan.ops);
+    l->tail = static_cast<uint16>(made.plan.tail);
+    l->span = static_cast<uint16>(made.plan.span);
+    l->info = made.info;
+    std::memcpy(l->fetch, made.plan.fetch, made.plan.fetches * sizeof made.plan.fetch[0]);
+    std::memcpy(l->op, made.plan.op, made.plan.ops * sizeof made.plan.op[0]);
+    l->next = t.plans.Index()[h];
+    t.plans.Index()[h] = static_cast<uint8>(l - t.plans.Lines() + 1);
+}
+// A site's event with no plan of its key: the generic path, and the path kept for the site where it has room (fewer
+// than two of that kind, not refused twice, the path stepped: not a second access, nor a branch whose slot made it)
+__attribute__((noinline)) uint32 SH3::SiteMiss(uint32 site, bool taken, uint32 a, uint32 bytes, bool write, uint32 target) {
     genericEvents++;
+    bool room = true;
+    if (planIndex) {
+        int same = 0;
+        for (uint8 i = planIndex[(site - planStart) >> 1]; i; i = planLines[i - 1].next) {
+            const PlanLine &l = planLines[i - 1];
+            same += l.kind == (taken ? 1 : 0);
+            room = room && !(l.kind == 2 && l.refused >= 2);
+        }
+        room = room && same < 2;
+    }
     const uint32 from = memoryTiming.from;
     const sint8 lastLoad = memoryTiming.lastLoad;
-    // (the branch whose slot made the last access is stepped without a path: Sh3Timing::Taken; nothing to keep for it)
-    const bool streamed = !(memoryTiming.lastInsn == branch + 2 && memoryTiming.from == branch + 4);
-    const uint32 got = memoryTiming.Taken(timingPaths, branch, target, cycles, [this](uint32 p) -> uint16 { return TimingCode(p); });
-    if (streamed && !refused && !(slot && slot[1] >= 0)) {
-        KeepPlan(*this, t, branch, true, from, lastLoad);
+    auto code = [this](uint32 p) -> uint16 { return TimingCode(p); };
+    uint32 got;
+    bool streamed;
+    if (!taken) {
+        streamed = at != memoryTiming.lastInsn || cycles != memoryTiming.lastTime;
+        got = memoryTiming.Access(timingPaths, at, a, bytes, write, inSlot, cycles, code);
+    } else {
+        streamed = !(memoryTiming.lastInsn == site + 2 && memoryTiming.from == site + 4);
+        got = memoryTiming.Taken(timingPaths, site, target, cycles, code);
+    }
+    if (room && streamed) {
+        KeepPlan(*this, *planBlock, site, taken, from, lastLoad);
     }
     return got;
 }
 
 void SH3::InterpretBlock() {
     planBlock = nullptr; // (no plans for the interpreter: the generic path)
+    planIndex = nullptr;
     if (recording && (IsRam(PC) || IsFlash(PC))) [[unlikely]] {
         if (RecordBlock(PC, false) && recordStatic) {
             FollowBlock(PC, recordStatic);
@@ -412,6 +406,8 @@ void SH3::RunBlocks(uint64 stop) {
                     WaitAhead(*t);
                 }
                 planBlock = plansOn ? t : nullptr;
+                planIndex = t->plans.buffer ? t->plans.Index() : nullptr;
+                planLines = t->plans.buffer ? t->plans.Lines() : nullptr;
                 planStart = t->block->address;
                 planBytes = t->block->length;
                 codeWritten = false;
@@ -450,6 +446,8 @@ void SH3::RunOneBlock(bool native) {
     if (mode == Mode::Native) {
         if (Translation *t = Lookup(PC)) {
             planBlock = plansOn ? t : nullptr;
+            planIndex = t->plans.buffer ? t->plans.Index() : nullptr;
+            planLines = t->plans.buffer ? t->plans.Lines() : nullptr;
             planStart = t->block->address;
             planBytes = t->block->length;
             codeWritten = false;

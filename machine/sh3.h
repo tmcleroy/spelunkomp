@@ -91,24 +91,34 @@ enum : uint32 {
 // loaded) a site; a third is not kept (the generic path for it). A plan depends on its key and the block's bytes
 // alone, and the block's translation is used only while its bytes are RAM's (SH3::Lookup), so the plans live with the
 // translation; they hold no state (a state loaded, run-ahead's or rollback's moment put back, keep them).
-struct SitePlans {
-    struct Plan {
-        uint32 from;
-        sint8 lastLoad;
-        uint8 fetches, ops;
-        uint16 tail, span;
-        Sh3Timing::PathInfo info;
-        uint32 fetchAt, opAt;
-    };
-    struct Site {
-        sint32 access[2] = {-1, -1}, taken[2] = {-1, -1}; // (plans[], -1 none)
-        uint8 refused[2] = {0, 0}; // (paths not kept, an access's and a branch's: from two on, none is made again)
-    };
-    std::vector<uint8> index; // (a byte a halfword of the block: its site's number in sites, one on; 0 none)
-    std::vector<Site> sites;
-    std::vector<Plan> plans;
-    std::vector<uint32> fetch;
-    std::vector<Sh3Timing::Plan::Op> op;
+// A plan a line: its key's rest, what kind of site's it is, the site's next line, and the plan itself, its fetches
+// and steps in place (a path of more than 3 fetches or 6 steps is not kept: about 0.1% of the paths, 0.02-0.3% of the
+// events). A site's lines are linked from its byte in the block's index; kind 2 is a site's count of paths not kept
+struct alignas(64) PlanLine {
+    uint32 from;
+    sint8 lastLoad;
+    uint8 kind;    // (0 an access's plan, 1 a taken branch's, 2 the paths refused at the site, `refused` of them)
+    uint8 next;    // (the site's next line, one on; 0 none)
+    uint8 fetches, ops, refused;
+    uint16 tail, span;
+    Sh3Timing::PathInfo info;
+    uint32 fetch[3];
+    Sh3Timing::Plan::Op op[6];
+};
+static_assert(sizeof(PlanLine) == 64, "a plan a cache line");
+// A block's plans, one allocation: its index (a byte a halfword: the site's first line, one on; 0 none) in its first
+// lines, then the lines. Made at the block's first plan with room for four, and made again twice the size when full
+// (to 255 lines: a byte names one); the lines are named by number, so nothing points into it but SH3's own copy of
+// the running block's, which a grow refreshes
+struct BlockPlans {
+    std::unique_ptr<PlanLine[]> buffer;
+    uint16 indexLines = 0, used = 0, capacity = 0;
+    uint8 *Index() const {
+        return reinterpret_cast<uint8 *>(buffer.get());
+    }
+    PlanLine *Lines() const {
+        return buffer.get() + indexLines;
+    }
 };
 
 class SH3 {
@@ -184,22 +194,46 @@ public:
         std::memcpy(&op, ram + (p & (kRamSize - 2)), 2);
         return __builtin_bswap16(op);
     }
-    // The plans the translated code's sites keep (SitePlans, above): the running block's translation and its place,
-    // while its own code is not written (codeWritten, NoteCodeWrite); RunBlocks sets them. A site's event is then
-    // its slot's (SiteAccess, SiteTaken: runtime/dispatch.cpp), the generic path where it has no plan of its key
+    // The plans the translated code's sites keep (PlanLine, BlockPlans, above; runtime/dispatch.cpp): the running
+    // block's translation, its place and its plans (RunBlocks sets them), while its own code is not written
+    // (codeWritten, NoteCodeWrite). A site's event finds its line from its own address and runs it as data; with none
+    // of its key, the generic path (SiteMiss), whose path the site may then keep
     struct Translation;
     Translation *planBlock = nullptr;
+    const uint8 *planIndex = nullptr; // (the running block's index and lines; null: it has none yet)
+    PlanLine *planLines = nullptr;
     uint32 planStart = 0, planBytes = 0;
     bool codeWritten = false;
     bool plansOn = true;     // (SPELUNK_NO_PLANS=1: every event the generic path's)
     uint32 plantPlan = 0;    // (SPELUNK_PLANT_PLAN=1: the first plan served a cycle longer from then on, for the shadow to find)
     uint64 plannedEvents = 0, genericEvents = 0;
-    uint32 SiteAccess(uint32 a, uint32 bytes, bool write);
-    uint32 SiteTaken(uint32 branch, uint32 target);
+    uint32 SiteMiss(uint32 site, bool taken, uint32 a, uint32 bytes, bool write, uint32 target);
+    PlanLine *SiteLine(uint32 site, uint8 kind) const {
+        for (uint8 i = planIndex[(site - planStart) >> 1]; i;) {
+            PlanLine &l = planLines[i - 1];
+            if (l.kind == kind && l.from == memoryTiming.from && l.lastLoad == memoryTiming.lastLoad) {
+                return &l;
+            }
+            i = l.next;
+        }
+        return nullptr;
+    }
     void TimeAccess(uint32 a, uint32 bytes, bool write) {
         uint32 got;
         if (planBlock && !codeWritten && at - planStart < planBytes) {
-            got = SiteAccess(a, bytes, write);
+            PlanLine *l = planIndex ? SiteLine(at, 0) : nullptr;
+            if (l) {
+                if (plantPlan == 1) [[unlikely]] {
+                    l->tail++;
+                    plantPlan = 2;
+                }
+                const bool streamed = at != memoryTiming.lastInsn || cycles != memoryTiming.lastTime;
+                const uint32 extra = streamed ? memoryTiming.Run(l->fetch, l->fetches, l->op, l->ops, l->tail, l->span, l->info, false, inSlot, cycles) : 0;
+                got = memoryTiming.AccessData(timingPaths, at, a, bytes, write, cycles, extra, streamed, [this](uint32 p) -> uint16 { return TimingCode(p); });
+                plannedEvents++;
+            } else {
+                got = SiteMiss(at, false, a, bytes, write, 0);
+            }
         } else {
             got = memoryTiming.Access(timingPaths, at, a, bytes, write, inSlot, cycles, [this](uint32 p) -> uint16 { return TimingCode(p); });
             genericEvents++;
@@ -218,7 +252,20 @@ public:
     void TimeBranch(uint32 branch, uint32 target) {
         uint32 got;
         if (planBlock && !codeWritten && branch - planStart < planBytes) {
-            got = SiteTaken(branch, target);
+            PlanLine *l = planIndex ? SiteLine(branch, 1) : nullptr;
+            if (l) {
+                if (plantPlan == 1) [[unlikely]] {
+                    l->tail++;
+                    plantPlan = 2;
+                }
+                got = memoryTiming.TakenCore(branch, target, cycles, [this](uint32 p) -> uint16 { return TimingCode(p); },
+                                             [&]() __attribute__((always_inline)) {
+                                                 return memoryTiming.Run(l->fetch, l->fetches, l->op, l->ops, l->tail, l->span, l->info, true, false, cycles);
+                                             });
+                plannedEvents++;
+            } else {
+                got = SiteMiss(branch, true, 0, 0, false, target);
+            }
         } else {
             got = memoryTiming.Taken(timingPaths, branch, target, cycles, [this](uint32 p) -> uint16 { return TimingCode(p); });
             genericEvents++;
@@ -530,8 +577,8 @@ public:
         sint8 wait = -1;
         uint8 n0 = 0, m0 = 0, n1 = 0, m1 = 0, m3 = 0;
         uint32 waitCost = 0;
-        // (its sites' plans: none until its first, SitePlans)
-        std::unique_ptr<SitePlans> plans;
+        // (its sites' plans: none until its first, BlockPlans)
+        BlockPlans plans;
     };
     // The frame's wait with the timing model off (docs/SLOWDOWN.md, "The poll loop"): the turns before the block's last
     // worked out at once, the block running that one itself
