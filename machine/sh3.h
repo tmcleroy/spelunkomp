@@ -198,7 +198,7 @@ public:
     uint32 SiteTaken(uint32 branch, uint32 target);
     void TimeAccess(uint32 a, uint32 bytes, bool write) {
         uint32 got;
-        if (planBlock && !codeWritten && at - planStart < planBytes) [[likely]] {
+        if (planBlock && !codeWritten && at - planStart < planBytes) {
             got = SiteAccess(a, bytes, write);
         } else {
             got = memoryTiming.Access(timingPaths, at, a, bytes, write, inSlot, cycles, [this](uint32 p) -> uint16 { return TimingCode(p); });
@@ -217,7 +217,7 @@ public:
     // went. Translated code calls it at the same point
     void TimeBranch(uint32 branch, uint32 target) {
         uint32 got;
-        if (planBlock && !codeWritten && branch - planStart < planBytes) [[likely]] {
+        if (planBlock && !codeWritten && branch - planStart < planBytes) {
             got = SiteTaken(branch, target);
         } else {
             got = memoryTiming.Taken(timingPaths, branch, target, cycles, [this](uint32 p) -> uint16 { return TimingCode(p); });
