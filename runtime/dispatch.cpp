@@ -184,10 +184,6 @@ static void KeepPlan(SH3 &c, SH3::Translation &t, uint32 site, bool taken, uint3
     SitePlans::Plan p{from, lastLoad, static_cast<uint8>(made.plan.fetches), static_cast<uint8>(made.plan.ops),
                       static_cast<uint16>(made.plan.tail), static_cast<uint16>(made.plan.span), made.info,
                       static_cast<uint32>(sp.fetch.size()), static_cast<uint32>(sp.op.size())};
-    if (c.plantPlan == 1) {
-        p.tail++; // (SPELUNK_PLANT_PLAN=1: the first plan kept a cycle longer, for the shadow to find)
-        c.plantPlan = 2;
-    }
     sp.fetch.insert(sp.fetch.end(), made.plan.fetch, made.plan.fetch + made.plan.fetches);
     sp.op.insert(sp.op.end(), made.plan.op, made.plan.op + made.plan.ops);
     slot[free] = static_cast<sint32>(sp.plans.size());
@@ -200,12 +196,16 @@ __attribute__((noinline)) uint32 SH3::SiteAccess(uint32 a, uint32 bytes, bool wr
     bool refused = false;
     if (t.plans) {
         if (const uint8 i = t.plans->index[(site - planStart) / 2]) {
-            const SitePlans &sp = *t.plans;
+            SitePlans &sp = *t.plans;
             slot = sp.sites[i - 1].access;
             refused = sp.sites[i - 1].refused[0] >= 2;
             for (int k = 0; k < 2 && slot[k] >= 0; k++) {
-                const SitePlans::Plan &p = sp.plans[static_cast<size_t>(slot[k])];
+                SitePlans::Plan &p = sp.plans[static_cast<size_t>(slot[k])];
                 if (memoryTiming.from == p.from && memoryTiming.lastLoad == p.lastLoad) {
+                    if (plantPlan == 1) [[unlikely]] {
+                        p.tail++; // (SPELUNK_PLANT_PLAN=1: the first plan served a cycle longer from now on, for the shadow to find)
+                        plantPlan = 2;
+                    }
                     const bool streamed = at != memoryTiming.lastInsn || cycles != memoryTiming.lastTime;
                     const uint32 extra = streamed ? memoryTiming.Run(sp.fetch.data() + p.fetchAt, p.fetches, sp.op.data() + p.opAt, p.ops, p.tail,
                                                                      p.span, p.info, false, inSlot, cycles)
@@ -232,12 +232,16 @@ __attribute__((noinline)) uint32 SH3::SiteTaken(uint32 branch, uint32 target) {
     bool refused = false;
     if (t.plans) {
         if (const uint8 i = t.plans->index[(branch - planStart) / 2]) {
-            const SitePlans &sp = *t.plans;
+            SitePlans &sp = *t.plans;
             slot = sp.sites[i - 1].taken;
             refused = sp.sites[i - 1].refused[1] >= 2;
             for (int k = 0; k < 2 && slot[k] >= 0; k++) {
-                const SitePlans::Plan &p = sp.plans[static_cast<size_t>(slot[k])];
+                SitePlans::Plan &p = sp.plans[static_cast<size_t>(slot[k])];
                 if (memoryTiming.from == p.from && memoryTiming.lastLoad == p.lastLoad) {
+                    if (plantPlan == 1) [[unlikely]] {
+                        p.tail++;
+                        plantPlan = 2;
+                    }
                     plannedEvents++;
                     return memoryTiming.TakenCore(branch, target, cycles, PlanCode{this}, [&]() __attribute__((always_inline)) {
                         return memoryTiming.Run(sp.fetch.data() + p.fetchAt, p.fetches, sp.op.data() + p.opAt, p.ops, p.tail, p.span, p.info,

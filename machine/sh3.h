@@ -192,7 +192,7 @@ public:
     uint32 planStart = 0, planBytes = 0;
     bool codeWritten = false;
     bool plansOn = true;     // (SPELUNK_NO_PLANS=1: every event the generic path's)
-    uint32 plantPlan = 0;    // (SPELUNK_PLANT_PLAN=1: the first plan kept a cycle longer, for the shadow to find)
+    uint32 plantPlan = 0;    // (SPELUNK_PLANT_PLAN=1: the first plan served a cycle longer from then on, for the shadow to find)
     uint64 plannedEvents = 0, genericEvents = 0;
     uint32 SiteAccess(uint32 a, uint32 bytes, bool write);
     uint32 SiteTaken(uint32 branch, uint32 target);
