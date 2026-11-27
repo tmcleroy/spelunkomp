@@ -9,6 +9,7 @@
 
 #include <algorithm>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 
 namespace spelunk {
@@ -136,7 +137,130 @@ void SH3::FollowBlock(uint32 start, unsigned steps) {
     }
 }
 
+// ---- The plans the translated sites keep (SitePlans, sh3.h) ----
+namespace {
+    // (one code reader for every site, so AccessDataOut is one function)
+    struct PlanCode {
+        SH3 *c;
+        uint16 operator()(uint32 p) const {
+            return c->TimingCode(p);
+        }
+    };
+}
+// A site's plan, for an event that took the generic path: made as StreamNew makes it (Sh3Timing::DerivePlan) and kept
+// for the site if it may be: known, its key the block's (its start reached by a branch, or the last event in it), the
+// bytes it read the block's alone. A site keeps two keys; a third is not kept
+static void KeepPlan(SH3 &c, SH3::Translation &t, uint32 site, bool taken, uint32 from, sint8 lastLoad) {
+    const uint32 start = c.planStart, end = c.planStart + c.planBytes;
+    if (!(from == (start | 1u) || (!(from & 1u) && from > start && from <= site))) {
+        return;
+    }
+    Sh3Timing::Made made;
+    c.memoryTiming.DerivePlan(from, lastLoad, site, taken, PlanCode{&c}, made);
+    const bool keep = made.info.known && made.lo != Sh3Timing::kNoLine && made.lo >= start && made.lo + made.bytes <= end &&
+                      made.plan.tail <= 0xFFFF && made.plan.span <= 0xFFFF;
+    if (!t.plans) {
+        t.plans = std::make_unique<SitePlans>();
+        t.plans->index.assign(c.planBytes / 2, 0); // (a block's slots made at its first plan, or its first path refused)
+    }
+    SitePlans &sp = *t.plans;
+    uint8 &at = sp.index[(site - start) / 2];
+    if (!at) {
+        if (sp.sites.size() >= 255) {
+            return; // (a byte names a site: a block's first 255 sites)
+        }
+        sp.sites.emplace_back();
+        at = static_cast<uint8>(sp.sites.size());
+    }
+    if (!keep) {
+        sp.sites[at - 1].refused[taken ? 1 : 0]++; // (not made again for this site from the second on)
+        return;
+    }
+    sint32 *slot = taken ? sp.sites[at - 1].taken : sp.sites[at - 1].access;
+    const int free = slot[0] < 0 ? 0 : slot[1] < 0 ? 1 : -1;
+    if (free < 0) {
+        return;
+    }
+    SitePlans::Plan p{from, lastLoad, static_cast<uint8>(made.plan.fetches), static_cast<uint8>(made.plan.ops),
+                      static_cast<uint16>(made.plan.tail), static_cast<uint16>(made.plan.span), made.info,
+                      static_cast<uint32>(sp.fetch.size()), static_cast<uint32>(sp.op.size())};
+    if (c.plantPlan == 1) {
+        p.tail++; // (SPELUNK_PLANT_PLAN=1: the first plan kept a cycle longer, for the shadow to find)
+        c.plantPlan = 2;
+    }
+    sp.fetch.insert(sp.fetch.end(), made.plan.fetch, made.plan.fetch + made.plan.fetches);
+    sp.op.insert(sp.op.end(), made.plan.op, made.plan.op + made.plan.ops);
+    slot[free] = static_cast<sint32>(sp.plans.size());
+    sp.plans.push_back(p);
+}
+__attribute__((noinline)) uint32 SH3::SiteAccess(uint32 a, uint32 bytes, bool write) {
+    Translation &t = *planBlock;
+    const uint32 site = at;
+    const sint32 *slot = nullptr;
+    bool refused = false;
+    if (t.plans) {
+        if (const uint8 i = t.plans->index[(site - planStart) / 2]) {
+            const SitePlans &sp = *t.plans;
+            slot = sp.sites[i - 1].access;
+            refused = sp.sites[i - 1].refused[0] >= 2;
+            for (int k = 0; k < 2 && slot[k] >= 0; k++) {
+                const SitePlans::Plan &p = sp.plans[static_cast<size_t>(slot[k])];
+                if (memoryTiming.from == p.from && memoryTiming.lastLoad == p.lastLoad) {
+                    const bool streamed = at != memoryTiming.lastInsn || cycles != memoryTiming.lastTime;
+                    const uint32 extra = streamed ? memoryTiming.Run(sp.fetch.data() + p.fetchAt, p.fetches, sp.op.data() + p.opAt, p.ops, p.tail,
+                                                                     p.span, p.info, false, inSlot, cycles)
+                                                  : 0;
+                    plannedEvents++;
+                    return memoryTiming.AccessDataOut(timingPaths, at, a, bytes, write, cycles, extra, streamed, PlanCode{this});
+                }
+            }
+        }
+    }
+    genericEvents++;
+    const uint32 from = memoryTiming.from;
+    const sint8 lastLoad = memoryTiming.lastLoad;
+    const bool streamed = at != memoryTiming.lastInsn || cycles != memoryTiming.lastTime;
+    const uint32 got = memoryTiming.Access(timingPaths, at, a, bytes, write, inSlot, cycles, [this](uint32 p) -> uint16 { return TimingCode(p); });
+    if (streamed && !refused && !(slot && slot[1] >= 0)) {
+        KeepPlan(*this, t, site, false, from, lastLoad); // (a site with room: its plan made for the next time)
+    }
+    return got;
+}
+__attribute__((noinline)) uint32 SH3::SiteTaken(uint32 branch, uint32 target) {
+    Translation &t = *planBlock;
+    const sint32 *slot = nullptr;
+    bool refused = false;
+    if (t.plans) {
+        if (const uint8 i = t.plans->index[(branch - planStart) / 2]) {
+            const SitePlans &sp = *t.plans;
+            slot = sp.sites[i - 1].taken;
+            refused = sp.sites[i - 1].refused[1] >= 2;
+            for (int k = 0; k < 2 && slot[k] >= 0; k++) {
+                const SitePlans::Plan &p = sp.plans[static_cast<size_t>(slot[k])];
+                if (memoryTiming.from == p.from && memoryTiming.lastLoad == p.lastLoad) {
+                    plannedEvents++;
+                    return memoryTiming.TakenCore(branch, target, cycles, PlanCode{this}, [&]() __attribute__((always_inline)) {
+                        return memoryTiming.Run(sp.fetch.data() + p.fetchAt, p.fetches, sp.op.data() + p.opAt, p.ops, p.tail, p.span, p.info,
+                                                true, false, cycles);
+                    });
+                }
+            }
+        }
+    }
+    genericEvents++;
+    const uint32 from = memoryTiming.from;
+    const sint8 lastLoad = memoryTiming.lastLoad;
+    // (the branch whose slot made the last access is stepped without a path: Sh3Timing::Taken; nothing to keep for it)
+    const bool streamed = !(memoryTiming.lastInsn == branch + 2 && memoryTiming.from == branch + 4);
+    const uint32 got = memoryTiming.Taken(timingPaths, branch, target, cycles, [this](uint32 p) -> uint16 { return TimingCode(p); });
+    if (streamed && !refused && !(slot && slot[1] >= 0)) {
+        KeepPlan(*this, t, branch, true, from, lastLoad);
+    }
+    return got;
+}
+
 void SH3::InterpretBlock() {
+    planBlock = nullptr; // (no plans for the interpreter: the generic path)
     if (recording && (IsRam(PC) || IsFlash(PC))) [[unlikely]] {
         if (RecordBlock(PC, false) && recordStatic) {
             FollowBlock(PC, recordStatic);
@@ -283,7 +407,12 @@ void SH3::RunBlocks(uint64 stop) {
                 if (!timing && t->wait != 0) [[unlikely]] {
                     WaitAhead(*t);
                 }
+                planBlock = plansOn ? t : nullptr;
+                planStart = t->block->address;
+                planBytes = t->block->length;
+                codeWritten = false;
                 t->block->run(*this);
+                planBlock = nullptr;
                 nativeBlocks++;
             } else {
                 if (countInterpreted) [[unlikely]] {
@@ -316,7 +445,12 @@ void SH3::RunOneBlock(bool native) {
     }
     if (mode == Mode::Native) {
         if (Translation *t = Lookup(PC)) {
+            planBlock = plansOn ? t : nullptr;
+            planStart = t->block->address;
+            planBytes = t->block->length;
+            codeWritten = false;
             t->block->run(*this);
+            planBlock = nullptr;
             nativeBlocks++;
             return;
         }
@@ -328,7 +462,10 @@ void SH3::RunOneBlock(bool native) {
 void SH3::InstallTranslations() {
     size_t count = 0;
     const NativeBlock *blocks = NativeBlocks(count);
-    m_translations.assign(count, Translation{});
+    m_translations.clear(); // (their sites' plans with them)
+    m_translations.resize(count);
+    plansOn = !getenv("SPELUNK_NO_PLANS");
+    plantPlan = getenv("SPELUNK_PLANT_PLAN") ? 1u : 0u;
     m_flash.clear();
     for (size_t i = 0; i < count; i++) {
         Translation &t = m_translations[i];
