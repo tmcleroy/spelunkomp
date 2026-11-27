@@ -4,6 +4,9 @@
 #include "../../../runtime/shmup.h"
 #include "mushisam.h"
 
+#include <algorithm>
+#include <string>
+
 namespace spelunk {
 
 namespace {
@@ -69,6 +72,32 @@ namespace {
             out.push_back({y - r, x - r, y + r, x + r, HitBox::Ship});
         }
     }
+    // While a player's game is played: the ship record's first word is set (it is from the coin and Start, and cleared at
+    // the game over) and the ship has been put in place (0 until the shot select is over), not the title, the logos
+    // or the game over after it
+    bool Playing(const Board &board) {
+        return Long(board, mushisam::kShipRecord) != 0 && Long(board, mushisam::kShipX) != 0;
+    }
+    std::string Number(uint32_t n) {
+        std::string digits = std::to_string(n), out;
+        for (size_t i = 0; i < digits.size(); i++) {
+            out += digits[i];
+            if ((digits.size() - 1 - i) % 3 == 0 && i + 1 < digits.size()) {
+                out += ',';
+            }
+        }
+        return out;
+    }
+    // The score the next extra ship comes at (0: none left)
+    uint32_t NextExtend(const Board &board) {
+        using namespace mushisam;
+        if (Long(board, kExtendEvery) == 1) {
+            return Long(board, kExtendList);
+        }
+        const uint32_t taken = Long(board, kExtendTaken);
+        const uint32_t at = taken < 3 ? Long(board, kExtendList + taken * 4) : 0xFFFFFFFFu;
+        return at == 0xFFFFFFFFu ? 0 : at;
+    }
 } // namespace
 
 const Game &ThisGame() {
@@ -85,7 +114,43 @@ const Game &ThisGame() {
         f.hitTest = mushisam::kHitTest;
         f.hitBoxes = HitBoxes;
         f.hitKinds |= 1u << HitBox::Ground | 1u << HitBox::Shot;
-        return shmup::MakeGame(mushisam::kCredits, f);
+        Game g = shmup::MakeGame(mushisam::kCredits, f);
+        // (the M2-style gadgets, port/gadgets.h: the counter of Maniac and Ultra, the items taken, the next extra
+        // ship; and the score and stage, for the score by stage. No rank was found: see PROGRESS.md)
+        using Kind = Gadget::Kind;
+        g.gadgets = {
+            {"COUNTER", Kind::Graph,
+             [](const Board &board) {
+                 return Playing(board) && Long(board, mushisam::kMode) ? "+" + std::to_string(Long(board, mushisam::kCounter)) : std::string();
+             },
+             [](const Board &board, int &value, int &most) {
+                 value = static_cast<int>(std::min<uint32_t>(Long(board, mushisam::kCounter), 1000));
+                 most = 500; // (it can go higher: the bar is cut off there)
+                 return Playing(board) && Long(board, mushisam::kMode);
+             },
+             0xFF40C0FFu},
+            {"SCORE ITEMS", Kind::Words,
+             [](const Board &board) {
+                 using namespace mushisam;
+                 return Playing(board) ? "100: " + std::to_string(Long(board, kItemsKind0)) + "  200: " + std::to_string(Long(board, kItemsKind2)) +
+                                             "  500: " + std::to_string(Long(board, kItemsKind3))
+                                       : std::string();
+             }},
+            {"NEXT EXTEND", Kind::Words,
+             [](const Board &board) {
+                 if (!Playing(board)) {
+                     return std::string();
+                 }
+                 const uint32_t at = NextExtend(board);
+                 return at ? Number(at) : std::string("NONE LEFT");
+             }},
+        };
+        g.score = [](const Board &board) -> long long {
+            return Playing(board) ? static_cast<long long>(Long(board, mushisam::kScore)) << 32 | Long(board, mushisam::kScore + 4) : -1;
+        };
+        g.stage = [](const Board &board) { return Playing(board) ? static_cast<int>(Long(board, mushisam::kStage)) : -1; };
+        g.stageNames = f.stages;
+        return g;
     }();
     return game;
 }
