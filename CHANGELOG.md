@@ -5,6 +5,11 @@ Versions follow [Semantic Versioning](https://semver.org/).
 
 ## Unreleased
 
+- **Scene export** (Game > Scene export, Shift+F12; Ctrl+F12 a clip of 3, 5 or 10 seconds): the picture taken apart,
+  each of the board's layers by itself as a see-through PNG (Cave's 68000 board: its tile layers and sprites by
+  priority; the PGM: the sprites behind, the background, the sprites, the text; the CV1000: the frame's draws in the
+  order the game made them), each sprite by itself, and the hit boxes and readouts as layers of their own, in
+  cps2recomp's files: the launcher's Open diorama shows them in 3D (docs/FEATURES.md, Scene export).
 - **The Linux download is built with clang**, and can be built with a profile made on a Steam Machine or Deck
   (tools/release/linux.sh, run-pgo-linux.sh, docs/RELEASING.md): the same frames and hashes as gcc's build (three
   games of the three boards compared frame by frame), SaiDaiOuJou's busiest scene 4.4 ms a frame with gcc, 4.2 with

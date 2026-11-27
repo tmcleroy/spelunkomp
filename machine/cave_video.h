@@ -88,7 +88,41 @@ struct CaveVideo {
     NativeFrame68k *native = nullptr;
     bool rasterize = true;
 
+    // The picture taken apart (the scene export, port/scene.h), from a native frame (what the GPU draws: the sprites as
+    // the chip latched them, the layers and palette as the picture was made): each tile layer's pixel at each point
+    // (its colour, 0 for none, and the tile's priority) and the sprite chip's (its colour, the sprite's priority and
+    // which of the frame's sprites it is, -1 none); laid back to front by priority (a sprite goes below the tiles of
+    // its own priority) they are the picture
+    struct Split {
+        std::vector<uint32_t> tiles[kLayers];
+        std::vector<uint8_t> tilePriority[kLayers];
+        int tileOrder[kLayers] = {}; // (the layers by how they rank among tiles of one priority: back first)
+        bool big[kLayers] = {};      // (the layer's tiles 16 x 16, else 8 x 8)
+        int layerCount = 0;
+        std::vector<uint32_t> sprites;
+        std::vector<uint8_t> spritePriority;
+        std::vector<int32_t> spriteEntry;
+        uint32_t background = 0;
+    };
+    void SplitFrame(const NativeFrame68k &frame, Split &out) const;
+    // One of the frame's sprites drawn alone, in the box of the screen it covers (false: none of it is on the screen)
+    bool SpriteAlone(const NativeFrame68k &frame, size_t which, int &x, int &y, int &w, int &h, std::vector<uint32_t> &pixels) const;
+
 private:
+    // What a picture is made from: the layers' memory and registers, the palette, and the sprite chip's buffer (each
+    // pixel's sprite pixel, colour and priority, kBufferSize across)
+    struct Source {
+        const std::vector<uint8_t> *layerRam[kLayers];
+        const std::vector<uint8_t> *palette;
+        const uint16_t (*layerRegs)[3];
+        uint16_t spriteX, spriteY;
+        bool tileBank;
+        const uint16_t *spriteBuffer;
+    };
+    void Compose(const Source &source, uint32_t *out, Split *split) const;
+    // A sprite into a buffer of the sprite chip's shape (`entries` beside it, if given: which sprite each pixel is of)
+    void RasterSprite(uint16_t *buffer, int32_t *entries, int32_t entry, uint32_t code, uint16_t colourPriority, int x, int y, bool flipX,
+                      bool flipY, int width, int height, int zoomX, int zoomY) const;
     uint16_t Word(const std::vector<uint8_t> &memory, uint32_t at) const {
         return static_cast<uint16_t>((memory[at] << 8) | memory[at + 1]);
     }

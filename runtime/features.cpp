@@ -171,6 +171,9 @@ namespace {
              "harshest of it; Softer, more, for a warmer sound. Off: the sound as the chips make it. The game plays exactly "
              "the same either way.",
              0, {"Off", "Soft", "Softer"}},
+            // (the Scene export page's Record clip: port/scene.h, port/main.cpp's sceneClip; only what is saved here)
+            {"scene_clip_length", "Scene export", "Clip length", "How long Record clip records for.", 0,
+             {"3 seconds", "5 seconds", "10 seconds"}},
         };
         return features;
     }

@@ -12,6 +12,7 @@
 #include "gpu.h"
 #include "hud.h"
 #include "png_write.h"
+#include "scene.h"
 
 #include <SDL3/SDL.h>
 
@@ -48,6 +49,8 @@ struct Hw {
     VramAccess vramAccess;
     uint32_t maxPasses = 0, maxTile = 0, maxDraws = 0, listsBefore = 0;
     uint64_t checkedFrames = 0, wrongFrames = 0;
+    // The draws of the last two frames that drew (the scene export: the picture on show was drawn by one of them)
+    std::vector<NativeDraw> keptDraws[2];
     std::string checkShots = getenv("SPELUNK_CHECK_SHOTS") ? getenv("SPELUNK_CHECK_SHOTS") : "";
 
     explicit Hw(std::unique_ptr<Cv1000> &board)
@@ -252,6 +255,7 @@ struct Hw {
         if (rewindOn) {
             timeline.Note(drawList);
         }
+        KeepDraws();
         return late;
     }
     // --check-video: the GPU's screen against the software blitter's, pixel for pixel
@@ -310,6 +314,7 @@ struct Hw {
         if (useGpu) {
             gpu.Run(drawList);
         }
+        KeepDraws();
     }
     void EndAhead() {
         if (useGpu) {
@@ -412,6 +417,7 @@ struct Hw {
         if (useGpu) {
             gpu.Run(drawList);
         }
+        KeepDraws();
     }
     // (GPU only) the window's own drawing of the screen, at three times the picture's size, into a file
     // (`w` x `h`: the picture's shape as shown, port/main.cpp's canvasSize)
@@ -423,6 +429,211 @@ struct Hw {
     void PresentScreen(int degrees, const SDL_FRect &to) {
         gpu.PresentScreen(board->blitter.scrollX, board->blitter.scrollY, degrees / 90, to);
     }
+    // ---- The scene export (port/scene.h) ----
+    // A blend whose destination's part is all of the destination (where its source's part is nothing, it leaves the
+    // picture as it was)
+    static bool KeepsUnder(const NativeDraw &d) {
+        const int mode = d.flags & 127, dMode = (mode >> 3) & 7, dAlpha = (d.colours >> 5) & 31;
+        return mode < 64 && (dMode == 3 || dMode == 7 || (dMode == 0 && dAlpha == 31) || (dMode == 4 && dAlpha == 0));
+    }
+    void KeepDraws() {
+        if (!drawList.draws.empty()) {
+            keptDraws[1].swap(keptDraws[0]);
+            keptDraws[0].assign(drawList.draws.begin(), drawList.draws.end());
+        }
+    }
+    // The picture on show taken apart: the blitter draws every frame into one picture, so the layers are the frame's
+    // draws in the game's order, those that follow one another from the same part of VRAM in the same way one layer.
+    // The draws are those of the last frame that drew into the window on show, run again here from VRAM as it is now
+    // (the sources: sprite sheets, which stay put): what each layer shows of the picture is the picture's own pixels
+    // (blends and all), and where a later layer covers it, what its draws painted by themselves (their sources' colours,
+    // tinted; a blend's as if over nothing)
+    bool TakeScene(Scene &scene, int) {
+        constexpr int kW = kWidth, kH = kHeight;
+        const int wx = static_cast<int>(board->blitter.scrollX & 0x1FFF), wy = static_cast<int>(board->blitter.scrollY & 0xFFF);
+        // (the part of a draw in the window: its destination's pixels there; false: none)
+        auto inWindow = [&](const NativeDraw &d, int &x0, int &y0, int &x1, int &y1) {
+            x0 = std::max(d.x0, wx);
+            y0 = std::max(d.y0, wy);
+            x1 = std::min(d.x1, wx + kW - 1);
+            y1 = std::min(d.y1, wy + kH - 1);
+            return x0 <= x1 && y0 <= y1;
+        };
+        const std::vector<NativeDraw> *list = nullptr;
+        for (const std::vector<NativeDraw> &kept : keptDraws) {
+            int x0, y0, x1, y1;
+            if (std::any_of(kept.begin(), kept.end(), [&](const NativeDraw &d) { return inWindow(d, x0, y0, x1, y1); })) {
+                list = &kept;
+                break;
+            }
+        }
+        std::vector<uint32_t> shown(static_cast<size_t>(kW) * kH);
+        ReadScreen(shown.data());
+        scene.width = kW;
+        scene.height = kH;
+        scene.frame = board->frame;
+        scene.backdrop = 0;
+        scene.picture = shown;
+        const size_t size = shown.size();
+        // The draws in the window, and their sources' pixels there (read in one go: the GPU's VRAM, or the software
+        // blitter's)
+        struct One {
+            const NativeDraw *d;
+            int x0, y0, x1, y1;
+            size_t at; // (its source's pixels in `sources`, a row of x1 - x0 + 1 for each of its destination's rows)
+        };
+        std::vector<One> draws;
+        std::vector<VramArea> areas;
+        size_t total = 0;
+        if (list) {
+            for (const NativeDraw &d : *list) {
+                One o{&d, 0, 0, 0, 0, total};
+                const int sMode = d.flags & 7, sAlpha = d.colours & 31;
+                if (!inWindow(d, o.x0, o.y0, o.x1, o.y1) || (KeepsUnder(d) && ((sMode == 0 && sAlpha == 0) || (sMode == 4 && sAlpha == 31)))) {
+                    continue; // (not in the window; or a blend that leaves the picture as it was: one faded right out)
+                }
+                const bool flipX = d.flags & NativeDraw::kFlipX, flipY = d.flags & NativeDraw::kFlipY;
+                const int w = o.x1 - o.x0 + 1;
+                // (a row of source for each row of the destination: the source's rows can go either way and wrap)
+                const int sx0 = flipX ? d.sx - o.x1 : d.sx + o.x0;
+                if (sx0 < 0 || sx0 + w > Blitter::kVramWidth) {
+                    continue;
+                }
+                for (int y = o.y0; y <= o.y1; y++) {
+                    const int sy = ((flipY ? d.sy - y : d.sy + y) % Blitter::kVramHeight + Blitter::kVramHeight) % Blitter::kVramHeight;
+                    areas.push_back({sx0, sy, w, 1});
+                }
+                total += static_cast<size_t>(w) * (o.y1 - o.y0 + 1);
+                draws.push_back(o);
+            }
+        }
+        // (rows of one draw that follow one another: one area)
+        std::vector<VramArea> merged;
+        for (const VramArea &a : areas) {
+            if (!merged.empty() && merged.back().x == a.x && merged.back().w == a.w && merged.back().y + merged.back().h == a.y) {
+                merged.back().h++;
+            } else {
+                merged.push_back(a);
+            }
+        }
+        std::vector<uint16_t> sources(total);
+        if (!merged.empty()) {
+            vramAccess.read(merged, sources.data());
+        }
+        // The runs: draws one after another of the same kind (the blend, see-through or not) from the same part of
+        // VRAM (a page of 256 x 256), each a layer; then the smallest neighbours joined until there are no more than
+        // kMostLayers
+        constexpr int kMostLayers = 12;
+        struct Run {
+            size_t first, count;
+            uint64_t painted;
+            int pageX, pageY;
+            int32_t mode;
+        };
+        std::vector<Run> runs;
+        auto key = [](const One &o, int &px, int &py) {
+            const NativeDraw &d = *o.d;
+            px = ((d.flags & NativeDraw::kFlipX) ? d.sx - o.x1 : d.sx + o.x0) >> 8;
+            py = ((((d.flags & NativeDraw::kFlipY) ? d.sy - o.y1 : d.sy + o.y0) % Blitter::kVramHeight + Blitter::kVramHeight) % Blitter::kVramHeight) >> 8;
+            return d.flags & (127 | NativeDraw::kTransparent);
+        };
+        for (size_t n = 0; n < draws.size(); n++) {
+            int px, py;
+            const int32_t mode = key(draws[n], px, py);
+            const uint64_t painted = static_cast<uint64_t>(draws[n].x1 - draws[n].x0 + 1) * (draws[n].y1 - draws[n].y0 + 1);
+            if (!runs.empty() && runs.back().pageX == px && runs.back().pageY == py && runs.back().mode == mode) {
+                runs.back().count++;
+                runs.back().painted += painted;
+            } else {
+                runs.push_back({n, 1, painted, px, py, mode});
+            }
+        }
+        while (runs.size() > static_cast<size_t>(kMostLayers)) {
+            size_t best = 0;
+            for (size_t n = 1; n + 1 < runs.size(); n++) {
+                if (runs[n].painted + runs[n + 1].painted < runs[best].painted + runs[best + 1].painted) {
+                    best = n;
+                }
+            }
+            runs[best].count += runs[best + 1].count;
+            runs[best].painted += runs[best + 1].painted;
+            runs[best].mode = runs[best].mode == runs[best + 1].mode ? runs[best].mode : -1;
+            runs.erase(runs.begin() + static_cast<std::ptrdiff_t>(best) + 1);
+        }
+        // Each run's draws painted by themselves, and the run whose draw painted each pixel last
+        std::vector<int> owner(size, -1);
+        std::vector<SceneLayer> layers(runs.size());
+        for (size_t r = 0; r < runs.size(); r++) {
+            SceneLayer &layer = layers[r];
+            layer.name = "draws-" + std::to_string(r + 1);
+            layer.kind = "objects";
+            layer.tile = 16;
+            char extra[96];
+            snprintf(extra, sizeof extra, "\"draws\": %zu, \"page\": [%d, %d]", runs[r].count, runs[r].pageX * 256, runs[r].pageY * 256);
+            layer.extra = extra;
+            if (runs[r].mode >= 0) {
+                layer.extra += (runs[r].mode & 127) == 64 ? ", \"blend\": false" : ", \"blend\": true";
+            }
+            layer.Clear(size);
+            for (size_t n = runs[r].first; n < runs[r].first + runs[r].count; n++) {
+                const One &o = draws[n];
+                const NativeDraw &d = *o.d;
+                const bool see = d.flags & NativeDraw::kTransparent, tinted = d.flags & NativeDraw::kTinted;
+                // (a blend whose destination's part is all of the destination leaves the picture as it was where its
+                // source's part is nothing: a black source (an additive glow's dark edges), or one weighted by an alpha
+                // of nothing (a picture faded right out). Those pixels paint nothing)
+                const bool blackLeaves = KeepsUnder(d) && (d.flags & 7) != 2 && (d.flags & 7) != 6;
+                const int tr = (d.colours >> 10) & 0x3F, tg = (d.colours >> 16) & 0x3F, tb = (d.colours >> 22) & 0x3F;
+                const int w = o.x1 - o.x0 + 1;
+                for (int y = o.y0; y <= o.y1; y++) {
+                    // (the row of source read for this row: from the source of x0, or flipped, of x1)
+                    const uint16_t *row = &sources[o.at + static_cast<size_t>(y - o.y0) * w];
+                    for (int x = o.x0; x <= o.x1; x++) {
+                        const uint16_t pen = row[(d.flags & NativeDraw::kFlipX) ? o.x1 - x : x - o.x0];
+                        if (see && !(pen & 0x8000)) {
+                            continue;
+                        }
+                        uint32_t r5 = (pen >> 10) & 0x1F, g5 = (pen >> 5) & 0x1F, b5 = pen & 0x1F;
+                        if (tinted) {
+                            r5 = std::min<uint32_t>(r5 * tr / 31, 31);
+                            g5 = std::min<uint32_t>(g5 * tg / 31, 31);
+                            b5 = std::min<uint32_t>(b5 * tb / 31, 31);
+                        }
+                        if (blackLeaves && !(r5 | g5 | b5)) {
+                            continue;
+                        }
+                        const size_t at = static_cast<size_t>(y - wy) * kW + (x - wx);
+                        layer.Set(at, ((b5 << 3 | b5 >> 2) << 16) | ((g5 << 3 | g5 >> 2) << 8) | (r5 << 3 | r5 >> 2));
+                        owner[at] = static_cast<int>(r);
+                    }
+                }
+            }
+        }
+        // (each layer the picture's own where it is in front; behind where a later layer is; what nothing drew this
+        // frame, a layer of its own at the back)
+        SceneLayer base;
+        base.name = "picture-under";
+        base.kind = "objects";
+        base.tile = 16;
+        base.extra = "\"draws\": 0";
+        base.Clear(size);
+        for (size_t at = 0; at < size; at++) {
+            if (owner[at] < 0) {
+                base.Set(at, shown[at] & 0xFFFFFFu);
+                continue;
+            }
+            layers[static_cast<size_t>(owner[at])].Set(at, shown[at] & 0xFFFFFFu);
+        }
+        scene.layers.clear();
+        if (!base.empty) {
+            scene.layers.push_back(std::move(base));
+        }
+        for (SceneLayer &layer : layers) {
+            scene.layers.push_back(std::move(layer));
+        }
+        return true;
+    }
+
     // At the end of a run (checks)
     int Report() {
         if (checkVideo && useGpu) {

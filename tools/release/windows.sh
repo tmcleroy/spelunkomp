@@ -95,6 +95,8 @@ if x86_64-w64-mingw32-objdump -p "$STAGE"/*.exe | grep -i 'DLL Name' | grep -viE
 fi
 add_notices "$STAGE" "$BUILD/launcher"
 add_librashader "$STAGE" librashader.dll "$STAGE" "$STAGE/licenses" --windows
+# (the launcher's Tools: the scene diorama, tools/diorama)
+cp "$ROOT/tools/diorama/diorama.html" "$STAGE/"
 if x86_64-w64-mingw32-objdump -p "$STAGE/librashader.dll" | grep -i 'DLL Name' | grep -viE 'KERNEL32|ntdll|msvcrt|USER32|ADVAPI32|api-ms-|bcrypt|WS2_32|userenv|OPENGL32|GDI32|ole32|OLEAUT32|SHELL32'; then
     echo "error: librashader.dll needs a DLL that is not in the archive" >&2
     exit 1

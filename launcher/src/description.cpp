@@ -186,6 +186,13 @@ const launcher::Collection &launcher::describe_collection() {
         }
         c.bindings = c.games.front().description.bindings;
         c.file_name = "ROM set";
+#ifndef __ANDROID__
+        // (the scene diorama, tools/diorama/diorama.html, cps2recomp's: shipped beside the games, opened in the browser)
+        c.tools = {{"Scene diorama",
+                    "Opens the scenes and clips you save in the games (Game > Scene export) in your browser as 3D cut-outs, to turn, "
+                    "pull apart and photograph.",
+                    "Open diorama", "diorama.html"}};
+#endif
         // (online play's lobby, every game's, and the waiting room: the service cps2recomp's ports use too, its lobby
         // and room kept apart by the protocol said, Netplay::kLobbyProtocol)
         static const std::string lobby = std::string(port::Netplay::kService) + "/v1/lobby?protocol=" + std::to_string(port::Netplay::kLobbyProtocol);

@@ -50,6 +50,8 @@ sed -e "s/@VERSION@/$VERSION/g" -e "s/@NAME@/$NAME/g" -e "s/@APP_ID@/$APP_ID/g" 
     "$ROOT/tools/release/Info.plist" > "$APP/Contents/Info.plist"
 add_notices "$APP/Contents/Resources" "$BUILD/launcher"
 add_librashader "$APP/Contents/Frameworks" librashader.dylib "$APP/Contents/Resources" "$APP/Contents/Resources/licenses"
+# (the launcher's Tools: the scene diorama, tools/diorama)
+cp "$ROOT/tools/diorama/diorama.html" "$APP/Contents/Resources/"
 codesign --force --deep -s - "$APP"
 
 for binary in "$APP/Contents/MacOS/"* "$APP/Contents/Frameworks/"*; do
