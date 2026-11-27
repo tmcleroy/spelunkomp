@@ -58,7 +58,7 @@ constexpr uint32_t kBombStock = 0x102CB1; // what the bombs are filled to at a n
 // frame at a time; held up, nothing hits it)
 constexpr uint32_t kSafeFrames = 0x102CCA;
 
-// --- What the game keeps and does not show (found 2026-11-27 for the M2-style gadgets: runtime/game.h's Gadget) ---
+// --- What the game keeps and does not show (found 2026-11-27 for the gadgets: runtime/game.h's Gadget) ---
 // The rank: the game's difficulty number, 0 to 63, made again every frame (003330 on) and read by the enemies' fire
 // (their intervals and speeds: 010A68 on, 03CDC0, 053F1E). It is a table's byte for the stage (the table's address in
 // the long at 10122E) plus the stage's number, 32 in the second loop, twice the ships held (101965, 101967), the bees' count

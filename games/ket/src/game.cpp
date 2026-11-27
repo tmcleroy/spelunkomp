@@ -150,7 +150,7 @@ const Game &ThisGame() {
         f.hitBoxes = HitBoxes;
         f.hitKinds |= 1u << HitBox::Ground | 1u << HitBox::Shot;
         Game g = shmup::MakeGame(ket::kCredits, f);
-        // (the M2-style gadgets, port/gadgets.h: the chips, the loop; and the score and stage, for the score by stage)
+        // (the gadgets, port/gadgets.h: the chips, the loop; and the score and stage, for the score by stage)
         using Kind = Gadget::Kind;
         g.gadgets = {
             // (the stock and the total as the HUD's two numbers, the one the game is counting now first)

@@ -96,7 +96,7 @@ The games' names are their owners' trademarks.
 
   <p align="center"><img src="docs/screenshots/rewind-ddp.gif" width="49%" alt="DoDonPachi's stage 5 boss: the ship is hit and explodes, the rewind runs the scene backwards about three seconds (a REWIND note at the top, the explosion undone and the score counting down), then play goes on and the ship gets through"><br><em>Rewind: hold R or the left trigger and the game runs backwards; let go and play on</em></p>
 
-- **M2-style gadgets**: panels beside the picture, as M2's ports of arcade shooters have them: the rank as a graph,
+- **Gadgets**: panels beside the picture: the rank as a graph,
   the chain and hyper gauges, chips, zan, the next drops and medals, boss life, the second loop's terms and the score
   each stage made, read from the game's own memory.
 - **Online play** with rollback: a game's two-player mode with someone on another machine, by a code or from the

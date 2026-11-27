@@ -122,7 +122,7 @@ const Game &ThisGame() {
         f.hitBoxes = HitBoxes;
         f.hitKinds |= 1u << HitBox::Ground | 1u << HitBox::Shot;
         Game g = shmup::MakeGame(ibara::kCredits, f);
-        // (the M2-style gadgets, port/gadgets.h: what the MAME layout for the game shows)
+        // (the gadgets, port/gadgets.h: what the MAME layout for the game shows)
         using Kind = Gadget::Kind;
         g.gadgets = {
             {"RANK", Kind::Graph,

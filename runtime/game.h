@@ -46,8 +46,8 @@ struct Readout {
     std::string (*value)(const Board &board);
 };
 
-// A gadget (the feature "M2-style gadgets", port/gadgets.h): a framed panel beside the picture, in the window's space
-// the picture leaves at its sides, as M2's ports of arcade shooting games have them. Read from the game's memory each
+// A gadget (the feature "Gadgets", port/gadgets.h): a framed panel beside the picture, in the window's space
+// the picture leaves at its sides. Read from the game's memory each
 // frame shown, never written to it. A Words gadget shows `words` (lines broken at '\n'; "": the gadget not shown, as
 // between games); a Meter its `level` as a bar, with `words` beside it; a Graph its `level` kept over the last
 // half a minute as a line (the rank graph), the value now with `words` under it. `level` gives the value now and the
