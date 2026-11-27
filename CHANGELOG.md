@@ -5,6 +5,12 @@ Versions follow [Semantic Versioning](https://semver.org/).
 
 ## Unreleased
 
+## 0.5.0-beta.1
+
+Faster again, above all with run-ahead: the processor kept at speed between frames, run-ahead keeping only the
+memory a frame changed, and the Windows and Linux downloads built with clang and a profile; and scene export, the
+picture taken apart into its layers for cps2recomp's diorama.
+
 - **Scene export** (Game > Scene export, Shift+F12; Ctrl+F12 a clip of 3, 5 or 10 seconds): the picture taken apart,
   each of the board's layers by itself as a see-through PNG (Cave's 68000 board: its tile layers and sprites by
   priority; the PGM: the sprites behind, the background, the sprites, the text; the CV1000: the frame's draws in the
@@ -19,6 +25,13 @@ Versions follow [Semantic Versioning](https://semver.org/).
   (tools/release/linux.sh, run-pgo-linux.sh, docs/RELEASING.md): the same frames and hashes as gcc's build (three
   games of the three boards compared frame by frame), SaiDaiOuJou's busiest scene 4.4 ms a frame with gcc, 4.2 with
   clang, 3.7 with clang and a profile on a Steam Machine. gcc's own profiles, which this replaces, made it slower.
+- **Run-ahead keeps only what a frame changed** (run-ahead 1 and 2, offline): a kept frame copied the board's whole
+  16 MB of memory, now only the pages written since the last. The same frames; on a Steam Machine at SaiDaiOuJou's
+  boss, run-ahead 1 with the stick moving went from 301 frames late a minute in 0.4.0 to 36 (with the clang build),
+  and with it still costs no more than run-ahead off.
+- **The Windows download is built with clang and a profile** made on a Windows PC (llvm-mingw, tools/release/
+  windows.sh, run-pgo-windows.ps1): the same frames and hashes as gcc's build, SaiDaiOuJou's boss about 16% faster;
+  run-ahead 1 with the stick moving from about 230 frames late a minute to about 45. It needs Windows 10 or later.
 
 ## 0.4.0-beta.1
 
