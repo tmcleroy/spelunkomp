@@ -49,7 +49,7 @@ Each needs its own arcade ROM set, one version of it: the launcher's page for th
 | Training mode | Speed readout | How fast the game is going: under 100% where it slows down. On, with the host's time: beside it, this machine's own time a frame (the last second's mean), so a slow machine is told from the board's slowdown; logs/game.log has it a minute at a time |
 | Training mode | Speed (slow motion) | The Speed row at the page's top (as on the Game page): 3/4 down to 1/8 for study, or faster; the sound slowed with it. The game computes exactly the same frames |
 | Training mode | Frame advance | Stops the game with the frame's number shown; then O, Tab or a gamepad's right trigger goes on a frame at a time (held: frame after frame). P or the row again plays on |
-| Scene export | Save scene, Record clip, Clip length | The picture taken apart, each of the board's layers by itself ([below](#scene-export)): Shift+F12 a frame, Ctrl+F12 a clip of 3, 5 or 10 seconds |
+| Scene export | Save scene, Record clip, Clip length, Show scenes folder | The picture taken apart, each of the board's layers by itself ([below](#scene-export)): Shift+F12 a frame, Ctrl+F12 a clip of 3, 5 or 10 seconds; Show scenes folder opens where they are saved |
 | Online | Ping, Input delay, Hide names | What an online match shows at the bottom of the picture (docs/ONLINE.md) |
 
 Always there: save states (F5 / F9, and the menu), pause (P) and a frame on (O; stopped, Tab or the right trigger too),
@@ -81,7 +81,8 @@ up). The sprites of a 68000 board or a PGM are saved each by itself too: `entrie
 box of the picture each covers. With the hit boxes on, they are a layer of their own (`overlay-boxes`) and listed in
 `scene.json` (`boxes`: the ship's as player 1's); the training tools' writing is `overlay-hud`, at the writing's size.
 **Record clip** (Ctrl+F12) saves the same for every frame of 3, 5 or 10 seconds (**Clip length**), each layer's frames
-in a folder of its own (`sprites-p2/0001.png`...), written by threads beside the game; Ctrl+F12 again stops it sooner.
+in a folder of its own (`sprites-p2/0001.png`...), written by threads beside the game; Ctrl+F12 again stops it sooner. **Show scenes folder**
+opens `exports/scenes/` in the file manager (not on Android).
 
 **The scene diorama** (`tools/diorama/diorama.html`, cps2recomp's): the launcher's **Open diorama** (Tools) opens it
 in the browser; open a saved folder there (or drop it on the page) to see the layers as cut-outs at their own depths,
