@@ -79,6 +79,8 @@ struct TimingStats {
     };
     std::unordered_map<uint32_t, Watched> watched;
     std::unordered_set<uint64_t> keys; // (every path's key streamed: the memo's working set)
+    std::unordered_map<uint64_t, uint32_t> missKeys; // (each key's misses: found again)
+    uint64_t forgets = 0, evictLive = 0;
     std::unordered_map<uint32_t, uint64_t> stepsOfFound; // (a found path's steps: how many found)
     uint32_t writerInsn = 0; // (the instruction making the write being noted; 0: not the CPU's, the DMA's)
     void NoteWrite(uint32_t block, uint32_t a) {
@@ -92,7 +94,11 @@ struct TimingStats {
         it->second.writers[writerInsn]++;
     }
     void Key(uint32_t from, uint32_t insn, bool branch, int8_t lastLoad) {
-        keys.insert(static_cast<uint64_t>(from) << 32 ^ static_cast<uint64_t>(insn | (branch ? 1u : 0u)) << 5 ^ static_cast<uint64_t>(lastLoad + 1));
+        const uint64_t whole = static_cast<uint64_t>(from) << 32 ^ static_cast<uint64_t>(insn | (branch ? 1u : 0u)) << 5 ^ static_cast<uint64_t>(lastLoad + 1);
+        keys.insert(whole);
+        if (outcome == 2) {
+            missKeys[whole]++;
+        }
         const uint32_t f = from & ~1u;
         int k = 2;
         if (curStart == 0) {
@@ -129,6 +135,20 @@ struct TimingStats {
                     u(key[k][1]), u(key[k][2]));
         }
         fprintf(out, "timing stats: distinct paths streamed: %zu\n", keys.size());
+        {
+            uint64_t bins[6] = {}, missesIn[6] = {}, all = 0;
+            for (const auto &[k, n] : missKeys) {
+                const int b = n == 1 ? 0 : n < 10 ? 1 : n < 100 ? 2 : n < 600 ? 3 : n < 6000 ? 4 : 5;
+                bins[b]++;
+                missesIn[b] += n;
+                all += n;
+            }
+            fprintf(out, "timing stats: keys missed: %zu (%llu misses); by how often: 1x %llu (%llu), 2-9x %llu (%llu), 10-99x %llu (%llu), "
+                         "100-599x %llu (%llu), 600-5999x %llu (%llu), 6000x+ %llu (%llu)\n",
+                    missKeys.size(), u(all), u(bins[0]), u(missesIn[0]), u(bins[1]), u(missesIn[1]), u(bins[2]), u(missesIn[2]), u(bins[3]),
+                    u(missesIn[3]), u(bins[4]), u(missesIn[4]), u(bins[5]), u(missesIn[5]));
+            fprintf(out, "timing stats: forgets %llu, a live memo of another key replaced %llu\n", u(forgets), u(evictLive));
+        }
         fprintf(out, "timing stats: s = (entry + in block) / all = %.4f\n", all ? static_cast<double>(served) / all : 0.0);
         fprintf(out, "timing stats: found, steps: <=16 %llu, 17-24 %llu, 25-32 %llu, 33-48 %llu, 49-64 %llu, 65-96 %llu, 97+ %llu; not known %llu\n",
                 u(newSteps[0]), u(newSteps[1]), u(newSteps[2]), u(newSteps[3]), u(newSteps[4]), u(newSteps[5]), u(newSteps[6]),
@@ -958,6 +978,7 @@ struct Sh3PathsTwoWay {
         }
     }
     void Forget() {
+        SPELUNK_TS(g_timingStats.forgets++;)
         if (++generation == 0) {
             for (Memo &m : memos) {
                 m.generation = 0;
@@ -1051,6 +1072,7 @@ struct Sh3PathsTwoWay {
                                                                                   : 1 - recent[set];
         recent[set] = static_cast<uint8_t>(way);
         Memo &m = memos[2 * set + way];
+        SPELUNK_TS(g_timingStats.evictLive += m.generation == generation && !(m.from == from && m.to == to && m.info.lastLoad == info.lastLoad) ? 1 : 0;)
         m.generation = generation;
         m.from = from;
         m.to = to;
