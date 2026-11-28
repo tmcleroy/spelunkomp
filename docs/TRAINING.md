@@ -263,9 +263,9 @@ tall window).
 | Espgaluda | KAKUSEI (the bullet multiplier, to 100), OVERMODE (its level, 1 to 4, and the way to the next), GOLD (the count, to 1,000, and the step it is on, one more each 100); score by stage |
 | Espgaluda II | OVER LEVEL (Overmode's level, 0 to 3, kept when a ship is lost, and its way to the next in Overmode: 250 frames), GOLD (to 1,000); score by stage |
 | Mushihimesama Futari (every set) | RANK (a graph, to the mode's most), RANK FROM (what it is made of: the mode's base, the ship's part from the bombs held, the time played); score by stage. The rank's routine read from the game's code in each set |
+| Dangun Feveron | RANK (0 to 63, the byte the bullets' speed reads, a graph; 63 through the second round), CYBORGS TO 1UP (the cyborgs taken this game, the extend at 2,000); score by stage, 1-1 to 2-5 |
 
 ## Not yet
 
 The other games' scoring readouts (Mushihimesama's rank, Espgaluda II's Kakusei multiplier, Futari's counters and
-multiplier: none found yet), the gadgets of Deathsmiles, Akai Katana, DoDonPachi II, DonPachi, Dangun Feveron and
-Guwange (docs/plans/GADGETS-RESEARCH.md: what the official ports show), score attack and the other modes (ROADMAP.md).
+multiplier: none found yet), the gadgets of Deathsmiles, Akai Katana, DoDonPachi II, DonPachi and Guwange (docs/plans/GADGETS-RESEARCH.md: what the official ports show), score attack and the other modes (ROADMAP.md).

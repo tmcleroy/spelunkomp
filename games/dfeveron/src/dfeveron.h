@@ -88,4 +88,22 @@ constexpr uint32_t kFormation1 = 0x10673A, kFormation2 = 0x1069BA;
 constexpr int kFormationSize = 0x20, kShipKind = 0x1E;
 constexpr int kFormationCount[3] = {19, 18, 8};
 
+// --- What the gadgets read (port/gadgets.h; found 2026-11-28 from the code that keeps each, checked in a RAM log of
+// headless play) ---
+// The rank (a byte, 0 to 63: the enemies' bullets' speed), made again every 16th frame by 003F62 as the stage's byte
+// of a table (its address in the long at 1015AE: 12, 22, 22, 42, 52 for the stages on this board's settings) + for each
+// ship flown twice its words at +0x2A and +0x2E less 2 (not below 0) and its bombs (kBombs) + the frames played over
+// 2,048 (the long at 1052D0) + the ships left (kShips) + the byte at 1052C7, cut to 63; 63 all through the second
+// round (1052DA not 0). The game keeps a half and a quarter of it too (1052CB, 1052CD). Found: 18 = 12 + 3 bombs + 3
+// ships at the start of a game in a RAM log, then 29, 33, 35 as the ship was powered up
+constexpr uint32_t kRank = 0x1052C9;
+constexpr int kRankMost = 63;
+// The cyborgs taken this game (32 bits: one more for each, 06D426, but not in the time attack's stage 6; at 2,000 the
+// extend is given, bit 0 of 105112. Found: it counted up one at a time in the log, 66 in a stage and a half)
+constexpr uint32_t kCyborgs = 0x10510C;
+constexpr int kCyborgsExtend = 2000;
+// Player 1's score (a long in BCD, tens: the high score 150,000 is 15000 at 103DF0 beside it; 0067E4 clears both
+// players' as a game begins)
+constexpr uint32_t kScore1 = 0x103DE8;
+
 } // namespace spelunk::dfeveron

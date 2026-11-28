@@ -37,7 +37,7 @@ Shmups Forum (system11), atwiki and pixiv refused automated reading, so details 
 | Akai Katana | None found. Xbox 360 Shin (Cave, 2011), Akai Katana Shin (City Connection, 2022: a training mode) ([Wikipedia](https://en.wikipedia.org/wiki/Akai_Katana), [Nintendo Life](https://www.nintendolife.com/reviews/nintendo-switch/akai-katana-shin)) | | Not yet |
 | DoDonPachi II | No home port found (IGS's PGM game) ([Wikipedia](https://en.wikipedia.org/wiki/DoDonPachi_II)) | | Not yet |
 | DonPachi | None. Saturn (Atlus, 1996, a score attack mode), PS1 (SPS), PSN (Hamster) ([Wikipedia](https://en.wikipedia.org/wiki/DonPachi)) | | Not yet |
-| Dangun Feveron | PS4 and Xbox One (M2, 2016 in Japan, 2018 in the West) ([m2stg.com](https://m2stg.com/en/dangun-feveron/ps4/feature.php), [Gematsu](https://gematsu.com/2016/09/m2-shottriggers-project-bringing-battle-garegga-rev2016-dangun-feveron-ps4)) | Score, lives, bombs, stage and high score, the controls, the dancers' count and their score, the fastest bullet's speed, a countdown before a dancer leaves, the shot's power, the dancers still needed for an extend, the score by section, the stage's progress, the music playing | Not yet |
+| Dangun Feveron | PS4 and Xbox One (M2, 2016 in Japan, 2018 in the West) ([m2stg.com](https://m2stg.com/en/dangun-feveron/ps4/feature.php), [Gematsu](https://gematsu.com/2016/09/m2-shottriggers-project-bringing-battle-garegga-rev2016-dangun-feveron-ps4)) | Score, lives, bombs, stage and high score, the controls, the dancers' count and their score, the fastest bullet's speed, a countdown before a dancer leaves, the shot's power, the dancers still needed for an extend, the score by section, the stage's progress, the music playing | The rank (what the bullets' speed reads) as a graph, the cyborgs on the way to the extend |
 | Guwange | None found. Xbox 360 (2010; Wikipedia says 5pb., Kotaku Cave) ([Wikipedia](https://en.wikipedia.org/wiki/Guwange)) | | Not yet |
 | DoDonPachi | None. Saturn (Atlus), PS1 (SPS, with slowdown switches), PSN ([Wikipedia](https://en.wikipedia.org/wiki/DoDonPachi)) | | Rank, chain, bees, the second loop's test |
 | Dai-Ou-Jou, Black Label | DoDonPachi DaiOuJou Re:Incarnation (PS4, Switch, Japan 2023), M2 ([m2stg.com](https://m2stg.com/daioujou/feature.php)); the PS2 port (Arika) has a practice mode | A map with the ship's place, boss and mid-boss life, the second loop's lamp, the bees found and missed; the update notes name a player info panel (a bomb locked out by hyper), a combo panel and a score breakdown. A rank panel (hyper rank, bullet speed and interval) is reported but was not checked | Rank, bullet speed, chain, hyper, bees, the second loop's test |
@@ -51,7 +51,7 @@ Shmups Forum (system11), atwiki and pixiv refused automated reading, so details 
 For our panels the question is what the game itself keeps: a readout is only added where the place in memory was
 found and checked (the game's `.h` says how). From the table, the readouts the M2 ports give these games that ours
 do not have yet: bullets and items on screen, boss life (ESP Ra.De., Ketsui, Dai-Ou-Jou), the stage map and progress,
-and Dangun Feveron's dancers. Those are next where the places can be found.
+and Dangun Feveron's countdown before a cyborg leaves. Those are next where the places can be found.
 
 ## A processing (slowdown) meter
 

@@ -4,6 +4,9 @@
 #include "../../../runtime/shmup.h"
 #include "dfeveron.h"
 
+#include <algorithm>
+#include <string>
+
 namespace spelunk {
 
 namespace {
@@ -13,6 +16,21 @@ namespace {
     }
     uint8_t Byte(const Board &board, uint32_t address) {
         return board.ram[address & 0xFFFF];
+    }
+    // While a player's game is played (the mode word's 7: the attract show's demonstration has another, a continue 8)
+    bool Playing(const Board &board) {
+        return Word(board, dfeveron::kMode) == dfeveron::kModePlay;
+    }
+    uint32_t Long(const Board &board, uint32_t address) {
+        return static_cast<uint32_t>(Word(board, address)) << 16 | static_cast<uint32_t>(Word(board, address + 2));
+    }
+    // Player 1's score in points (BCD tens)
+    long long Score(const Board &board) {
+        long long n = 0, scale = 1;
+        for (uint32_t b = Long(board, dfeveron::kScore1); b; b >>= 4, scale *= 10) {
+            n += (b & 15) * scale;
+        }
+        return n * 10;
     }
     // The boxes the game's hit tests (009FB6, 009F36) use, read as they read them
     void HitBoxes(const Board &board, std::vector<HitBox> &out) {
@@ -107,7 +125,42 @@ const Game &ThisGame() {
         f.bossWord = dfeveron::kBossOn;
         f.hitBoxes = HitBoxes;
         f.hitKinds |= 1u << HitBox::Ground | 1u << HitBox::Shot;
-        return shmup::MakeGame(dfeveron::kCredits, f);
+        Game g = shmup::MakeGame(dfeveron::kCredits, f);
+        // (the gadgets, port/gadgets.h: the rank over time, the cyborgs on the way to the extend; and the score and
+        // stage, for the score by stage)
+        using Kind = Gadget::Kind;
+        g.gadgets = {
+            {"RANK", Kind::Graph,
+             [](const Board &board) { return Playing(board) ? std::to_string(Byte(board, dfeveron::kRank)) + " / 63" : std::string(); },
+             [](const Board &board, int &value, int &most) {
+                 value = std::min<int>(Byte(board, dfeveron::kRank), dfeveron::kRankMost);
+                 most = dfeveron::kRankMost;
+                 return Playing(board);
+             },
+             0xFF4070FFu},
+            {"CYBORGS TO 1UP", Kind::Meter,
+             [](const Board &board) {
+                 if (!Playing(board)) {
+                     return std::string();
+                 }
+                 const uint32_t n = Long(board, dfeveron::kCyborgs);
+                 return n >= static_cast<uint32_t>(dfeveron::kCyborgsExtend) ? std::to_string(n) + "  GIVEN"
+                                                                            : std::to_string(n) + " / " + std::to_string(dfeveron::kCyborgsExtend);
+             },
+             [](const Board &board, int &value, int &most) {
+                 most = dfeveron::kCyborgsExtend;
+                 value = static_cast<int>(std::min<uint32_t>(Long(board, dfeveron::kCyborgs), static_cast<uint32_t>(most)));
+                 return Playing(board);
+             },
+             0xFF40D0FFu},
+        };
+        g.score = [](const Board &board) -> long long { return Playing(board) ? Score(board) : -1; };
+        // (the first round's five stages, then the second's)
+        g.stage = [](const Board &board) {
+            return Playing(board) ? (Word(board, dfeveron::kLoop) ? 5 : 0) + std::min(Word(board, dfeveron::kStage), 4) : -1;
+        };
+        g.stageNames = {"1-1", "1-2", "1-3", "1-4", "1-5", "2-1", "2-2", "2-3", "2-4", "2-5"};
+        return g;
     }();
     return game;
 }
