@@ -29,6 +29,9 @@
 //                                      game program's --features has them; off unless named. Without it the board
 //                                      alone runs, as the checks run it; `--features list`: each one's name and
 //                                      number of values
+//   --no-raster                        the software blitter draws no pixels and the draw lists are noted, as the
+//                                      game program has it with the GPU renderer (timing what a player's CPU does;
+//                                      the emulation is the same, VRAM's pixels aside: no --shot)
 //   --auto SEED[:FROM[:2]]             made-up play from frame FROM (400): coins, starts, the stick and buttons
 //                                      (:2 both players)
 //   SPELUNK_FRAME_DUMP=FILE[:DIV]      (measurement) every frame's picture, small and grey (port/frame_dump.h:
@@ -93,7 +96,7 @@ int main(int argc, char **argv) {
     std::map<uint64_t, std::string> shots, dumps, saveStates;
     std::vector<Held> held;
     unsigned recordStatic = 0;
-    bool rawShots = false, autoPlay = false;
+    bool rawShots = false, autoPlay = false, noRaster = false;
     uint64_t autoSeed = 0, autoFrom = 400;
     int autoPlayers = 1;
     std::string featureList;
@@ -185,6 +188,8 @@ int main(int argc, char **argv) {
             frameAnd(shots);
         } else if (a == "--raw-shots") {
             rawShots = true;
+        } else if (a == "--no-raster") {
+            noRaster = true;
         } else if (a == "--dump-ram") {
             frameAnd(dumps);
         } else if (a == "--save-state") {
@@ -251,6 +256,11 @@ int main(int argc, char **argv) {
         return 1;
     }
     const int rotate = atoi(config["rotate"].c_str());
+    NativeList drawList; // (--no-raster: the lists noted as the GPU renderer has them, emptied a frame)
+    if (noRaster) {
+        board->blitter.native = &drawList;
+        board->blitter.rasterize = false;
+    }
 
     if (cpuMode == "interpreter") {
         board->cpu.mode = SH3::Mode::Interpreter;
@@ -414,6 +424,7 @@ int main(int argc, char **argv) {
         }
         const uint32_t listsBefore = board->blitter.lists;
         board->RunFrame();
+        drawList.Clear();
         lateFrames += board->blitter.lists == listsBefore;
         if (lateLog) {
             fprintf(lateLog, "%llu %d\n", static_cast<unsigned long long>(board->frame), board->blitter.lists == listsBefore);
