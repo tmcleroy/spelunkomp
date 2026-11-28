@@ -5,6 +5,11 @@ Versions follow [Semantic Versioning](https://semver.org/).
 
 ## Unreleased
 
+- **Hotkeys for the in-game menu's options**: H (or a gamepad's Y) on an option's row asks for a key or button; while
+  playing it then steps that option (run-ahead through its frames, the shader through its list, a switch on and off;
+  Shift with a key goes back), and what it is now shows at the bottom. Keys and buttons that play the game, and the
+  menu's own, can't be one; off during online play, where the match decides. Kept per game in settings.ini.
+- The menu on a stood-up (vertical) picture fits: its top row no longer runs into itself.
 - **The in-game menu in tabs.** Back, Save state, Load state, Slot, Reset game, Quit game and Resume stay in a row at
   the top; every option is under one of the tabs, the same in every game and in cps2recomp: Game, Display, Sound,
   Online, Training, Modes, Cheats and Capture. LB/RB (or Q/E) change tab, X (or Delete) puts an option back as the
