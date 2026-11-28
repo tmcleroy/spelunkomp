@@ -5,12 +5,27 @@ Versions follow [Semantic Versioning](https://semver.org/).
 
 ## Unreleased
 
+## 0.6.0-beta.1
+
+Gadgets beside the picture in eight games, Dai-Ou-Jou Black Label's scoring readouts and hidden bees, and faster
+again: the slowdown's timing model up to 12% faster, the Android and Linux ARM64 downloads built with a profile,
+and run-ahead's frames run again early when the controls change.
+
+- **Gadgets**, panels in the space beside the picture in a wide window, as in M2's ports (Training mode > Gadgets,
+  off by default): the rank as a graph, the chain and hyper gauges, chips, lard, zan, the next drops and medals, boss
+  life, the second loop's terms and the score each stage made, read from the game's own memory, never written. In
+  DoDonPachi, Dai-Ou-Jou and Black Label, Ketsui, Muchi Muchi Pork, Pink Sweets, Ibara and Mushihimesama; every game
+  gets the controls held. None when the picture fills the window's width.
+- **Gamepad buttons named as the pad prints them** on the Controllers page: on a Nintendo-layout pad A, B, X and Y
+  are where its own letters are, not an Xbox pad's.
+- **Show scenes folder** on Game > Scene export: opens exports/scenes in the file manager (not on Android).
 - **Android and Linux ARM64 built with a profile**, as Linux x86_64 and Windows are: the same counts as Linux
   x86_64's, since clang counts the source, not the processor. About 8% faster at SaiDaiOuJou's boss and 7% at Muchi
   Muchi Pork's (Linux ARM64 on a MacBook Air), the same frames (the state hash each frame), and a smaller app.
 - **The slowdown's timing model finds its paths faster**: the paths it keeps are one cache line each, and four
   times as many fit. The same counts, so the same slowdown, frames and picture. Headless from the boss on a Steam
-  Machine: SaiDaiOuJou 11.8% faster, Muchi Muchi Pork 8.9%, Akai Katana (stage 1) 8.0%.
+  Machine: SaiDaiOuJou 11.8% faster, Muchi Muchi Pork 8.9%, Akai Katana (stage 1) 8.0%; on a Steam Deck 6.4%, 0.8%
+  and 6.1%.
 - **Run-ahead runs its frames again early** (run-ahead 1 and 2, offline): when the stick or a button changes, the
   frames ahead are run again in the wait before the next frame, not all at once at its start, so the change costs that
   frame one frame's work instead of three. The same frames, picture and sound. SaiDaiOuJou's boss on a Steam Machine
