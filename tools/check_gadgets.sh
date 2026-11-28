@@ -7,7 +7,8 @@
 # same in both. The run with them on leaves window pictures with the panels two thirds of the way and at the end
 # (work/<id>/gadgets/on-mid.png, on.png).
 #   tools/check_gadgets.sh ROMS [GAME...]   (BUILDS=build: the folder of each game's build, BUILDS/<id>/<id>;
-#   FRAMES=8000: how long each run is)
+#   FRAMES=8000: how long each run is; WINDOW=1280x720: the window's size, wider for a game whose picture is not
+#   stood up, as Deathsmiles', which leaves no room beside it in a 16:9 window)
 set -e
 cd "$(dirname "$0")/.."
 ROMS=${1:?usage: tools/check_gadgets.sh ROMS [GAME...]}
@@ -15,6 +16,7 @@ shift
 GAMES=${*:-$(for cfg in games/*/game.cfg; do basename "$(dirname "$cfg")"; done)}
 FRAMES=${FRAMES:-8000}
 BUILDS=${BUILDS:-./build}
+WINDOW=${WINDOW:-1280x720}
 # (the stick moved left and right, up and down, through the play; fire held)
 MOVES=""
 f=5000
@@ -32,7 +34,7 @@ for g in $GAMES; do
     run() { # name on|off
         cp $out/settings.ini $out/settings-$1.ini
         SPELUNK_HIDDEN_WINDOW=1 SPELUNK_REPORT_STATE=1 $BUILDS/$g/$g --software --roms "$ROMS" --settings $out/settings-$1.ini --mute \
-            --window-size 1280x720 --frames $FRAMES --picture-log $out/$1.pictures --window-shot $((FRAMES * 2 / 3)):$out/$1-mid.png --window-shot $FRAMES:$out/$1.png $PLAY \
+            --window-size $WINDOW --frames $FRAMES --picture-log $out/$1.pictures --window-shot $((FRAMES * 2 / 3)):$out/$1-mid.png --window-shot $FRAMES:$out/$1.png $PLAY \
             --features $2 2>&1 | grep '^state:' > $out/$1.txt || true
     }
     run on free_play,gadgets &
