@@ -266,8 +266,9 @@ tall window).
 | Dangun Feveron | RANK (0 to 63, the byte the bullets' speed reads, a graph; 63 through the second round), CYBORGS TO 1UP (the cyborgs taken this game, the extend at 2,000); score by stage, 1-1 to 2-5 |
 | DonPachi (both sets) | RANK (0 to 63, the byte the enemies' fire reads, made again as each part of a stage begins, a graph); score by stage, 1-1 to 2-5 |
 | Deathsmiles, MegaBlack Label | LEVELS (each stage so far, its place and the level chosen for it on the map, and how many were played at level 3 or above); score by stage. Its picture is wide: the panels need a window wider than 16:9 |
+| Guwange | RANK (0 to 63, the byte the enemies' fire reads, a graph); score by stage |
 
 ## Not yet
 
 The other games' scoring readouts (Mushihimesama's rank, Espgaluda II's Kakusei multiplier, Futari's counters and
-multiplier: none found yet), the gadgets of Akai Katana, DoDonPachi II and Guwange, Deathsmiles' item counter and Death Mode (docs/plans/GADGETS-RESEARCH.md: what the official ports show), score attack and the other modes (ROADMAP.md).
+multiplier: none found yet), the gadgets of Akai Katana and DoDonPachi II, Deathsmiles' item counter and Death Mode (docs/plans/GADGETS-RESEARCH.md: what the official ports show), score attack and the other modes (ROADMAP.md).
