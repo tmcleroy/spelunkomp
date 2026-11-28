@@ -4,6 +4,9 @@
 #include "../../../runtime/shmup.h"
 #include "esprade.h"
 
+#include <algorithm>
+#include <string>
+
 namespace spelunk {
 
 namespace {
@@ -13,6 +16,19 @@ namespace {
     }
     uint8_t Byte(const Board &board, uint32_t address) {
         return board.ram[address & 0xFFFF];
+    }
+    // While a player's game is played (the mode word's 7: the attract show's demonstration is 5, a continue offered 8)
+    bool Playing(const Board &board) {
+        return Word(board, esprade::kMode) == esprade::kModePlay;
+    }
+    // Player 1's score in points (BCD tens)
+    long long Score(const Board &board) {
+        const long long bcd = (static_cast<long long>(Word(board, esprade::kScore1)) << 16) | Word(board, esprade::kScore1 + 2);
+        long long n = 0, scale = 1;
+        for (long long b = bcd; b; b >>= 4, scale *= 10) {
+            n += (b & 15) * scale;
+        }
+        return n * 10;
     }
     // The boxes the game's hit test (005E72) uses, read as it reads them
     void HitBoxes(const Board &board, std::vector<HitBox> &out) {
@@ -118,7 +134,49 @@ const Game &ThisGame() {
         f.bossWord = esprade::kBossOn;
         f.hitBoxes = HitBoxes;
         f.hitKinds |= 1u << HitBox::Ground | 1u << HitBox::Shot;
-        return shmup::MakeGame(esprade::kCredits, f);
+        Game g = shmup::MakeGame(esprade::kCredits, f);
+        // (the gadgets, port/gadgets.h: the score item counter and how far it goes, the power shot's multiplier, the
+        // barrier's gauge; and the score and stage, for the score by stage)
+        using Kind = Gadget::Kind;
+        g.gadgets = {
+            {"SCORE ITEMS", Kind::Meter,
+             [](const Board &board) {
+                 using namespace esprade;
+                 if (!Playing(board)) {
+                     return std::string();
+                 }
+                 return std::to_string(Word(board, kItems)) + " / " + std::to_string(Word(board, kItemsMost)) +
+                        (Word(board, kItemsFull) ? "  FULL" : "");
+             },
+             [](const Board &board, int &value, int &most) {
+                 value = Word(board, esprade::kItems);
+                 most = Word(board, esprade::kItemsMost);
+                 return Playing(board);
+             },
+             0xFF40D0FFu},
+            {"MULTIPLIER", Kind::Words, [](const Board &board) {
+                 using namespace esprade;
+                 if (!Playing(board)) {
+                     return std::string();
+                 }
+                 const int time = Word(board, kMultiplierTime);
+                 return time ? "x" + std::to_string(Word(board, kMultiplier) + 1) + "  FOR " + std::to_string(time) : std::string("x1");
+             }},
+            {"BARRIER", Kind::Meter,
+             [](const Board &board) {
+                 return Playing(board) ? std::to_string(Word(board, esprade::kBarrier) * 100 / esprade::kBarrierFull) + "%" : std::string();
+             },
+             [](const Board &board, int &value, int &most) {
+                 value = Word(board, esprade::kBarrier);
+                 most = esprade::kBarrierFull;
+                 return Playing(board);
+             },
+             0xFF40FFFFu},
+        };
+        g.score = [](const Board &board) -> long long { return Playing(board) ? Score(board) : -1; };
+        // (the stages played so far: which map each is depends on the first stage chosen)
+        g.stage = [](const Board &board) { return Playing(board) ? std::min(Word(board, esprade::kStage), 5) : -1; };
+        return g;
     }();
     return game;
 }

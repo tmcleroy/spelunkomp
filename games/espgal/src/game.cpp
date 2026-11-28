@@ -5,6 +5,7 @@
 #include "espgal.h"
 
 #include <algorithm>
+#include <string>
 
 namespace spelunk {
 
@@ -12,6 +13,20 @@ namespace {
     int Word(const Board &board, uint32_t address) {
         const size_t mask = board.ram.size() - 1;
         return (board.ram[address & mask] << 8) | board.ram[(address + 1) & mask];
+    }
+    // While a player's game is played (the ships' byte is 0xFF while none is; the attract show's demonstration has its own)
+    bool Playing(const Board &board) {
+        return (Word(board, espgal::kShips - 1) & 0xFF) != 0xFF && !Word(board, espgal::kDemo);
+    }
+    long long Score(const Board &board) {
+        return ((static_cast<long long>(Word(board, espgal::kScore1)) << 16) | Word(board, espgal::kScore1 + 2)) * 10;
+    }
+    // In Kakusei (the gems left: 0, Overmode)
+    bool Kakusei(const Board &board) {
+        return Playing(board) && Word(board, espgal::kShip1 + espgal::kShipKakusei) != 0;
+    }
+    bool Overmode(const Board &board) {
+        return Kakusei(board) && Word(board, espgal::kGems) == 0;
     }
     // The boxes the game's hit test (11B1D0) uses, read as it reads them
     void HitBoxes(const Board &board, std::vector<HitBox> &out) {
@@ -178,7 +193,61 @@ const Game &ThisGame() {
         f.bossBits = espgal::kBossWarned;
         f.hitBoxes = HitBoxes;
         f.hitKinds |= 1u << HitBox::Ground | 1u << HitBox::Shot;
-        return shmup::MakeGame(espgal::kCredits, f);
+        Game g = shmup::MakeGame(espgal::kCredits, f);
+        // (the gadgets, port/gadgets.h: Kakusei's multiplier, Overmode's level, the gold and its step; and the score and
+        // stage, for the score by stage)
+        using Kind = Gadget::Kind;
+        g.gadgets = {
+            {"KAKUSEI", Kind::Meter,
+             [](const Board &board) {
+                 if (!Kakusei(board) || Overmode(board)) {
+                     return std::string();
+                 }
+                 return "x" + std::to_string(Word(board, espgal::kShip1 + espgal::kShipCancels) / 10 + 1) + " / 100";
+             },
+             [](const Board &board, int &value, int &most) {
+                 value = Word(board, espgal::kShip1 + espgal::kShipCancels) / 10 + 1;
+                 most = 100;
+                 return Kakusei(board) && !Overmode(board);
+             },
+             0xFF40FFFFu},
+            {"OVERMODE", Kind::Meter,
+             [](const Board &board) {
+                 using namespace espgal;
+                 if (!Overmode(board)) {
+                     return std::string();
+                 }
+                 return "LEVEL " + std::to_string(std::min(Word(board, kShip1 + kShipOverLevel) / 2 + 1, kOverLevels)) + " / " +
+                        std::to_string(kOverLevels);
+             },
+             [](const Board &board, int &value, int &most) {
+                 using namespace espgal;
+                 // (at the last level: full)
+                 const bool last = Word(board, kShip1 + kShipOverLevel) / 2 + 1 >= kOverLevels;
+                 most = std::max(Word(board, kShip1 + kShipOverNext), 1);
+                 value = last ? most : Word(board, kShip1 + kShipOverWay);
+                 return Overmode(board);
+             },
+             0xFFFF6040u},
+            {"GOLD", Kind::Meter,
+             [](const Board &board) {
+                 using namespace espgal;
+                 if (!Playing(board)) {
+                     return std::string();
+                 }
+                 return std::to_string(Word(board, kGold)) + "  STEP " + std::to_string(Word(board, kGoldStep) / 4 + 1) + " (" +
+                        std::to_string(Word(board, kGoldIntoStep)) + "/100)";
+             },
+             [](const Board &board, int &value, int &most) {
+                 value = Word(board, espgal::kGold);
+                 most = espgal::kGoldMost;
+                 return Playing(board);
+             },
+             0xFF40D0FFu},
+        };
+        g.score = [](const Board &board) -> long long { return Playing(board) ? Score(board) : -1; };
+        g.stage = [](const Board &board) { return Playing(board) ? std::min(Word(board, espgal::kStage), espgal::kStagesInAll - 1) : -1; };
+        return g;
     }();
     return game;
 }
