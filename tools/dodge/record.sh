@@ -40,7 +40,7 @@ while f < 260000:
     else
         # (the registers at each place, then: the object's task's longs at +4 and +0xC, its body's at 0 and +6, the
         # ship's place, the stage and loop, the stage's count, the boss's word)
-        SPELUNK_TRACE_AT=50E62,5101A,54EA2,54F74,2C84 SPELUNK_TRACE_MEM=102C92,101978,10197A,10198E,10E87A \
+        SPELUNK_TRACE_OBJECT=1 SPELUNK_TRACE_AT=50E62,5101A,54EA2,54F74,2C84 SPELUNK_TRACE_MEM=102C92,101978,10197A,10198E,10E87A \
             ./build/ddonpach/spelunk-headless $play > $OUT/r$run.txt &
     fi
 done

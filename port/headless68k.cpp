@@ -362,6 +362,17 @@ int main(int argc, char **argv) {
                         m = *end ? end + 1 : end;
                     }
                 }
+                // (SPELUNK_TRACE_OBJECT=1: after " #", the 0x40 bytes of a5's record and the 0x20 of a6's, in longs, where
+                // those are in RAM: a game's object as its task and its body)
+                if (getenv("SPELUNK_TRACE_OBJECT")) {
+                    printf(" #");
+                    for (auto [base, longs] : {std::pair{c.a[5], 16u}, std::pair{c.a[6], 8u}}) {
+                        for (uint32_t i = 0; i < longs; i++) {
+                            const uint32_t at = base + i * 4;
+                            printf(" %08X", (at & 0xFFFFFF) - c.ramBase < c.ramSize - 4 ? native::R32(c, at) : 0);
+                        }
+                    }
+                }
                 // (SPELUNK_TRACE_SPRITES=101216: the long there is where the frame's next sprite goes; after " |", the
                 // 16-byte entries written since the frame's last traced line, five words of each; with
                 // SPELUNK_TRACE_PALETTE=C00000:512 (the palette's place, and the bytes from one sprite colour's entries to the

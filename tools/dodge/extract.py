@@ -81,7 +81,7 @@ class Aim:
 def load(path, run):
     events = []
     for line in open(path):
-        r = line.split()
+        r = line.partition("#")[0].split()
         if len(r) < 43 or r[1] == "002C84" or int(r[0]) < 4500:
             continue
         v = [int(x, 16) for x in r[2:]]
