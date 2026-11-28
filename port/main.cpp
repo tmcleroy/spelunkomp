@@ -1577,6 +1577,10 @@ int main(int argc, char **argv) {
                                 "battery RAM): each as the board is set unless chosen here. Put in as the board starts: Reset game to "
                                 "play with a change."});
         }
+        // (the Gadgets page under Game: the panels beside the picture, port/gadgets.h; for any play, not only training)
+        mc.pages.push_back({kGadgetsPage, "Game",
+                            "Panels beside the picture, in the space a wide window leaves at its sides: the game's hidden "
+                            "counters, the score each stage made, the controls held."});
         // (the Scene export page under Game: port/scene.h)
         mc.pages.push_back({kScenePage, "Game",
                             "The picture taken apart: each of the board's layers by itself, as pictures with nothing where a layer "
