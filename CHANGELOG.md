@@ -5,6 +5,9 @@ Versions follow [Semantic Versioning](https://semver.org/).
 
 ## Unreleased
 
+- **The slowdown's timing model finds its paths faster**: the paths it keeps are one cache line each, and four
+  times as many fit. The same counts, so the same slowdown, frames and picture. Headless from the boss on a Steam
+  Machine: SaiDaiOuJou 11.8% faster, Muchi Muchi Pork 8.9%, Akai Katana (stage 1) 8.0%.
 - **Run-ahead runs its frames again early** (run-ahead 1 and 2, offline): when the stick or a button changes, the
   frames ahead are run again in the wait before the next frame, not all at once at its start, so the change costs that
   frame one frame's work instead of three. The same frames, picture and sound. SaiDaiOuJou's boss on a Steam Machine
