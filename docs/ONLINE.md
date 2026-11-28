@@ -83,8 +83,8 @@ it); over the internet, the host's public address with UDP port 7845 forwarded t
   own: the input display, the speed readout and the hit boxes (a co-op match isn't made unfair by them; cps2recomp's
   shooting games have them so too).
 - **On screen**: both players' names at the bottom, each on their side (**Hide names** hides them), the ping between
-  them ("PING 42 MS"), and the input delay too if you like ("DELAY 2"). Each is a switch on the Online page of the
-  launcher's Features and the in-game menu. "WAITING FOR THE OTHER PLAYER" shows if their game goes quiet for a moment.
+  them ("PING 42 MS"), and the input delay too if you like ("DELAY 2"). Each is a switch on the Online tab of the
+  in-game menu. "WAITING FOR THE OTHER PLAYER" shows if their game goes quiet for a moment.
 - **Chat**: press T (or a gamepad's right stick click), type a line and press Enter (Esc puts it away). The last few
   lines show at the bottom left for a few seconds. It goes straight from one game to the other. While you type, the
   keyboard is the chat's; a gamepad still plays.

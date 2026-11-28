@@ -2,9 +2,10 @@
 
 Everything a player can switch on, game by game. Every feature is off unless chosen (free play and "Straight to the
 title" are on to begin with, and can be turned off): with them all off a game plays as the board. They are chosen on
-the launcher's **Features** page, or while playing in the in-game menu (Esc, F1, a gamepad's Guide, or Start and
-Select together; the Controllers page's Menu button can add the left stick's click, or leave only Start and
-Select). A game's program lists its own with `--list-features`.
+the in-game menu while playing (Esc, F1, a gamepad's Guide, or Start and Select together; the Controllers page's
+Menu button can add the left stick's click, or leave only Start and Select), where each is under one of its tabs
+(Game, Display, Sound, Online, Training, Modes, Cheats, Capture). The launcher's **Settings** page has only what is set
+before a game starts: the renderer and the arcade monitor's mode; a game's own board settings are on its page. A game's program lists its own with `--list-features`.
 
 ## The games
 
@@ -33,9 +34,9 @@ Each needs its own arcade ROM set, one version of it: the launcher's page for th
 | Graphics | Scanline direction | A shader's lines down the picture, as on the cabinet's turned monitor, or across it; Auto (the default) as the screen is shaped |
 | Graphics | Renderer | GPU (the default): the board's drawing done by the graphics chip (docs/NATIVE.md). Software: by the processor, the reference the GPU is checked against; the same picture, for small integrated graphics (Intel UHD or Iris, a low-end phone's GPU) where it can be faster. Used from the next start; `--software` is Software whatever it says. The log (logs/game.log) suggests it when the GPU is Intel's integrated graphics or a low-end Mali or Adreno |
 | Graphics | FPS counter | The frames shown each second, top right: under the board's rate (60, 59.2 or 57.4) when the machine is not keeping up |
-| Arcade monitor | Full screen resolution | For a CRT at arcade rates (CRT Emudriver, a custom resolution): full screen in the board's own resolution, pixel for pixel (CV1000 and Cave's 68000 board 320 x 240, Mazinger Z 384 x 240, the PGM 448 x 224), or a super resolution of its lines and 1920 columns or more (the PGM's 224 lines one for one in a mode of 240 where the card has none of 224); only a mode near the board's rate (60.02, 57.44, 59.19 Hz). A game made for a monitor on its side is shown as the board sends it, for a monitor turned as the cabinet's was. Set on the launcher; not on Android |
-| Arcade monitor | Screen | Which screen the game opens and goes full screen on. Set on the launcher |
-| Arcade monitor | Make the mode at the board's rate, Monitor | Windows: Switchres (GroovyMAME's) makes that mode at exactly the board's rate, within the chosen monitor's ranges, and the desktop's mode comes back at the end. Set on the launcher |
+| Arcade monitor | Full screen resolution | For a CRT at arcade rates (CRT Emudriver, a custom resolution): full screen in the board's own resolution, pixel for pixel (CV1000 and Cave's 68000 board 320 x 240, Mazinger Z 384 x 240, the PGM 448 x 224), or a super resolution of its lines and 1920 columns or more (the PGM's 224 lines one for one in a mode of 240 where the card has none of 224); only a mode near the board's rate (60.02, 57.44, 59.19 Hz). A game made for a monitor on its side is shown as the board sends it, for a monitor turned as the cabinet's was. Set on the launcher's Settings page; not on Android |
+| Arcade monitor | Screen | Which screen the game opens and goes full screen on. Set on the launcher's Settings page |
+| Arcade monitor | Make the mode at the board's rate, Monitor | Windows: Switchres (GroovyMAME's) makes that mode at exactly the board's rate, within the chosen monitor's ranges, and the desktop's mode comes back at the end. Set on the launcher's Settings page |
 | Arcade monitor | Keep the board's pace | Off (the default): in full screen at an arcade mode one frame for each of the screen's refreshes, with a frame delay where the system says when it refreshes (Windows): each frame's controls read and its picture made as late before its refresh as the work allows, no added lag. On: the board's clock, as in a window. Online always the board's clock |
 | Arcade monitor | Compact menu | The in-game menu in small letters, its rows close together; on by itself on an arcade mode, where it is drawn on the board's own lines |
 | Sound | Sound filter | Softens the treble of what is played: Soft (from about 8 kHz) or Softer (about 5 kHz), a second-order low-pass on the sound as it is handed to the system only; the game, recordings and online play are as before. Each player's own online (port/sound_filter.h) |

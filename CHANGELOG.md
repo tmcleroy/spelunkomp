@@ -5,6 +5,19 @@ Versions follow [Semantic Versioning](https://semver.org/).
 
 ## Unreleased
 
+- **Hotkeys for the in-game menu's options**: H (or a gamepad's Y) on an option's row asks for a key or button; while
+  playing it then steps that option (run-ahead through its frames, the shader through its list, a switch on and off;
+  Shift with a key goes back), and what it is now shows at the bottom. Keys and buttons that play the game, and the
+  menu's own, can't be one; off during online play, where the match decides. Kept per game in settings.ini.
+- The menu on a stood-up (vertical) picture fits: its top row no longer runs into itself.
+- **The in-game menu in tabs.** Back, Save state, Load state, Slot, Reset game, Quit game and Resume stay in a row at
+  the top; every option is under one of the tabs, the same in every game and in cps2recomp: Game, Display, Sound,
+  Online, Training, Modes, Cheats and Capture. LB/RB (or Q/E) change tab, X (or Delete) puts an option back as the
+  Enhanced preset has it. The arcade monitor's compact menu is a CRT look of the same.
+- **The launcher shows only what is set before a game starts**: the renderer and the arcade monitor's mode on its
+  Settings page (once Features), a game's own board settings in a card on its page. Everything else is in the in-game
+  menu, where it can be tried on the picture. The launcher is in tabs too, and a game leaves its last picture for its
+  tile when quit from the menu.
 - **Gadgets in fourteen more games**: ESP Ra.De. (score items and how far the counter goes, the power shot's
   multiplier and its time, the barrier), Espgaluda (Kakusei's multiplier, Overmode's level, gold and its step),
   Espgaluda II (Overmode's level, gold), every set of Mushihimesama Futari (the rank as a graph and what it is made

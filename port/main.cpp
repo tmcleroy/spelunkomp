@@ -24,6 +24,7 @@
 #include "../machine/board.h"
 #include "../machine/zip.h"
 #include "../recomp-common/arcade_screen.h"
+#include "../recomp-common/hotkey.h"
 #include "../recomp-common/menu.h"
 #include "../recomp-common/menu_layout.h"
 #include "../recomp-common/menu_sdl.h"
@@ -435,7 +436,20 @@ int main(int argc, char **argv) {
                 fprintf(stderr, "%s\n", BoardSettingsProblem().c_str()); // (game.cfg's board options: runtime/board_settings.h)
                 return 1;
             }
-            fputs(port::FeatureListFor(AllFeatures()).c_str(), stdout); // (the launcher's Features page, and its note)
+            // (what the launcher shows, all else being the in-game menu's alone: what has to be set before the game starts,
+            // recomp-common settings.h's kFeatureLauncher. The board's own settings are a card on the game's page, and
+            // the autofire is the Controllers page's: launcher/src/description.cpp)
+            static const char *const kInLauncher[] = {
+                "renderer",                                                     // how the picture is drawn
+                "crt_resolution", "crt_screen", "crt_monitor", "crt_switchres", // the arcade monitor's mode
+            };
+            std::vector<recomp::FeatureInfo> list = AllFeatures();
+            for (recomp::FeatureInfo &f : list) {
+                if (std::any_of(std::begin(kInLauncher), std::end(kInLauncher), [&f](const char *name) { return f.name == name; })) {
+                    f.flags |= recomp::kFeatureLauncher;
+                }
+            }
+            fputs(port::FeatureListFor(list).c_str(), stdout); // (the launcher's Settings page, and its note)
             return 0;
         }
         if (a == "--game" && i + 1 < argc) {
@@ -1412,6 +1426,16 @@ int main(int argc, char **argv) {
     // (the Online page's Host a match, as cps2recomp's: the row that hosts, and while hosting the one that stops; the
     // menu made again with the other when that changes)
     recomp::MenuConfig menuConfig;
+    // Hotkeys (recomp-common/hotkey.h; settings.ini's [menu] hotkeys): a key or button the player gave an option in the menu
+    // (H or Y on its row), which steps it while playing; each menu feature's id for them (the Shader's Your own row too)
+    recomp::Hotkeys hotkeys;
+    std::vector<std::string> hotkeyIds;
+    bool menuConfigured = false; // (menu has had menuConfig: a hotkey can step an option before the menu was ever opened)
+    if (!settingsPath.empty()) {
+        recomp::Ini ini(settingsPath);
+        ini.load();
+        hotkeys.Load(ini.get("menu", "hotkeys"));
+    }
     const recomp::MenuCommand hostRow{"Online", "Host a match",
                                       "Others can join you online while you play on as you like (the menu, the training tools, "
                                       "save states): the match's code is at the bottom of the picture to give them, and with your "
@@ -1607,7 +1631,25 @@ int main(int argc, char **argv) {
                         recomp::MenuRow(recomp::MenuRow::Action, 2, recomp::layout::kTestMenu,
                                         "The board's test switch: the game's test menu: its settings, tests and bookkeeping.")};
         rows.resetDescription = "Starts the board again from power on.";
-        recomp::layout::Standard(mc, rows);
+        // (as tabs: layout::Tabbed, which lays out the pages as Standard does as well)
+        recomp::layout::Tabbed(mc, rows);
+        // (an option's default, which X puts back and against which a row shows as changed: as the Enhanced preset has
+        // it, as Reset all options puts it; the Shader's Your own row has none but its first)
+        {
+            recomp::Ini preset("");
+            recomp::SetPreset(preset, AllFeatures(), "enhanced");
+            std::vector<int> defaults = recomp::FeatureValues(preset, AllFeatures());
+            mc.defaultValue = [defaults = std::move(defaults), ownAt, menuFeature](size_t at) {
+                return at == ownAt || menuFeature(at) >= defaults.size() ? 0 : defaults[menuFeature(at)];
+            };
+        }
+        mc.tabsName = recomp::sdl::kTabsName;
+        mc.backName = recomp::sdl::kBackName;
+        for (size_t at = 0; at < mc.features.size(); at++) {
+            hotkeyIds.push_back(at == ownAt ? "shader_own" : AllFeatures()[menuFeature(at)].name);
+        }
+        mc.hotkey = [&hotkeys, &hotkeyIds](size_t at) { return at < hotkeyIds.size() ? hotkeys.Of(hotkeyIds[at]).Name() : std::string(); };
+        mc.hotkeyName = recomp::sdl::kHotkeyName;
         setHostRow(false);
         if (speedAtStart >= 0) {
             menu.SetSpeed(speedAtStart);
@@ -1643,6 +1685,25 @@ int main(int argc, char **argv) {
             }
         }
         return false;
+    };
+    // Why a key or button can't be a hotkey: it plays the game, or is one of this program's own ("": it can)
+    auto hotkeyTaken = [&](recomp::Hotkey hk) -> std::string {
+        static const SDL_Scancode own[] = {SDL_SCANCODE_P, SDL_SCANCODE_O, SDL_SCANCODE_T, SDL_SCANCODE_F2, SDL_SCANCODE_F3, SDL_SCANCODE_F5,
+                                           SDL_SCANCODE_F6, SDL_SCANCODE_F7, SDL_SCANCODE_F9, SDL_SCANCODE_F11, SDL_SCANCODE_F12,
+                                           SDL_SCANCODE_MINUS, SDL_SCANCODE_EQUALS};
+        if (hk.key != SDL_SCANCODE_UNKNOWN && (keyBound(hk.key) || std::find(std::begin(own), std::end(own), hk.key) != std::end(own))) {
+            return "That key plays the game.";
+        }
+        if (hk.button != SDL_GAMEPAD_BUTTON_INVALID) {
+            for (int p = 0; p < 2; p++) {
+                for (int a = 0; a < table.table.count; a++) {
+                    if (bindings.pad[p][a].button == hk.button) {
+                        return "That button plays the game.";
+                    }
+                }
+            }
+        }
+        return "";
     };
     const bool tabFree = !keyBound(SDL_SCANCODE_TAB); // (Tab opens the menu too, unless fast forward or another has it)
     controls.nineService = !keyBound(SDL_SCANCODE_9);
@@ -1860,6 +1921,7 @@ int main(int argc, char **argv) {
         standMenu();
         ownMenuRow(); // (the presets there now)
         menu.Configure(menuConfig);
+        menuConfigured = true;
         menu.Open();
         menuRepeat.Step(menuHeld()); // (what opened it is not also a press in it)
     };
@@ -1898,6 +1960,22 @@ int main(int argc, char **argv) {
         } else {
             fprintf(stderr, "screenshot: could not write %s\n", path.c_str());
             say("SCREENSHOT NOT SAVED");
+        }
+    };
+    // The game's last picture, left in its folder beside settings.ini when it is quit from the menu: the launcher's tile for
+    // it (picture.png, recomp-common/launcher). Not from a test's run, nor a start that went straight back out
+    auto keepPicture = [&]() {
+        if (settingsPath.empty() || checkVideo || frameCount < 600) {
+            return;
+        }
+        std::vector<uint32_t> board(static_cast<size_t>(Hw::kWidth) * Hw::kHeight), out;
+        readScreen(board.data());
+        int w = 0, h = 0;
+        canvasSize(w, h);
+        TurnTo(board.data(), turnNow(), w, h, out);
+        const std::filesystem::path path = std::filesystem::path(settingsPath).parent_path() / "picture.png";
+        if (!WritePng(path.string().c_str(), out.data(), static_cast<uint32_t>(w), static_cast<uint32_t>(h))) {
+            fprintf(stderr, "picture: could not write %s\n", path.string().c_str());
         }
     };
     // The scene export (port/scene.h): the picture taken apart, each of the board's layers by itself, turned as the
@@ -2090,7 +2168,10 @@ int main(int argc, char **argv) {
                 menu.Note("No state in that slot (or one from another version).");
             }
             break;
-        case recomp::Menu::Chosen::Quit: running = false; break;
+        case recomp::Menu::Chosen::Quit:
+            keepPicture(); // (before the menu goes: the game's picture, not the menu's)
+            running = false;
+            break;
         case recomp::Menu::Chosen::Command:
             // (the first command: Host a match, or Stop hosting; the second: Begin at the stage; then the game's own,
             // each of which begins a new game its own way: Game::command; then Frame advance and Attract mode's Start)
@@ -2740,6 +2821,37 @@ int main(int argc, char **argv) {
             }
             if (touch.Event(e)) {
                 continue; // (a finger: the touch controls')
+            }
+            // Hotkeys: while the menu asks for one (H or Y on an option's row) the key or button pressed is the answer, any
+            // but those that play the game or this program's own; in the game (not online: the match decides its options)
+            // a hotkey steps its option, as a change in the menu does (the Shader, the Screen follow at this frame's end)
+            if (menu.IsOpen() && menu.Listening() >= 0) {
+                bool changed = false;
+                const bool answered = recomp::sdl::HotkeyListen(e, menu, hotkeys, hotkeyIds, hotkeyTaken, changed);
+                if (changed && !settingsPath.empty()) {
+                    recomp::Ini ini(settingsPath);
+                    ini.load();
+                    ini.set("menu", "hotkeys", hotkeys.Save());
+                    ini.save();
+                }
+                if (answered) {
+                    continue;
+                }
+            } else if (!menu.IsOpen() && !net && hotkeys.Any() && !hotkeys.Find(recomp::sdl::HotkeyOf(e)).empty()) {
+                if (!menuConfigured) {
+                    ownMenuRow();
+                    menu.Configure(menuConfig); // (the menu's options, for Step, before it is first opened)
+                    menuConfigured = true;
+                }
+                std::string said = recomp::sdl::HotkeyPress(e, menu, hotkeys, hotkeyIds);
+                if (!said.empty()) {
+                    for (char &c : said) {
+                        c = static_cast<char>(toupper(static_cast<unsigned char>(c)));
+                    }
+                    fprintf(stderr, "hotkey: %s\n", said.c_str());
+                    say(said);
+                    continue;
+                }
             }
             recomp::Menu::Chosen clicked;
             if (e.type == SDL_EVENT_QUIT) {
@@ -3604,7 +3716,30 @@ int main(int argc, char **argv) {
                     }
                     continue;
                 }
-                const unsigned b = k == 'u' ? recomp::kMenuUp : k == 'd' ? recomp::kMenuDown : k == 'l' ? recomp::kMenuLeft
+                // (h: a hotkey for the option chosen, k: F4 given as the key it asked for, g: the menu closed and F4 pressed in
+                // the game, which says what it did on stderr)
+                if (k == 'k' || k == 'g') {
+                    SDL_Event f3{};
+                    f3.type = SDL_EVENT_KEY_DOWN;
+                    f3.key.scancode = SDL_SCANCODE_F4;
+                    if (k == 'k') {
+                        bool changed = false;
+                        recomp::sdl::HotkeyListen(f3, menu, hotkeys, hotkeyIds, hotkeyTaken, changed);
+                        if (changed && !settingsPath.empty()) {
+                            recomp::Ini ini(settingsPath);
+                            ini.load();
+                            ini.set("menu", "hotkeys", hotkeys.Save());
+                            ini.save();
+                        }
+                    } else {
+                        menu.Close();
+                        fprintf(stderr, "hotkey: %s\n", recomp::sdl::HotkeyPress(f3, menu, hotkeys, hotkeyIds).c_str());
+                        break;
+                    }
+                    drawMenu();
+                    continue;
+                }
+                const unsigned b = k == 'h' ? recomp::kMenuHotkey : k == 'u' ? recomp::kMenuUp : k == 'd' ? recomp::kMenuDown : k == 'l' ? recomp::kMenuLeft
                                  : k == 'r' ? recomp::kMenuRight : k == 'c' ? recomp::kMenuConfirm : recomp::kMenuBack;
                 drawMenu();
                 handleChosen(menu.Buttons(b));
