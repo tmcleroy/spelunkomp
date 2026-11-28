@@ -4,12 +4,28 @@
 #include "../../../runtime/shmup.h"
 #include "donpachi.h"
 
+#include <algorithm>
+#include <string>
+
 namespace spelunk {
 
 namespace {
     int Word(const Board &board, uint32_t address) {
         const uint8_t *p = &board.ram[address & 0xFFFF];
         return (p[0] << 8) | p[1];
+    }
+    // While a player's game is played (the mode word's 7: the attract show's demonstration is 5, a continue offered 8)
+    bool Playing(const Board &board) {
+        return Word(board, donpachi::kMode) == donpachi::kModePlay;
+    }
+    // Player 1's score in points (BCD)
+    long long Score(const Board &board) {
+        const uint32_t bcd = static_cast<uint32_t>(Word(board, donpachi::kScore1)) << 16 | static_cast<uint32_t>(Word(board, donpachi::kScore1 + 2));
+        long long n = 0, scale = 1;
+        for (uint32_t b = bcd; b; b >>= 4, scale *= 10) {
+            n += (b & 15) * scale;
+        }
+        return n;
     }
     // The boxes the game's hit test (0055DA) uses, read as it reads them
     void HitBoxes(const Board &board, std::vector<HitBox> &out) {
@@ -107,7 +123,27 @@ const Game &ThisGame() {
         f.bossWord = donpachi::kBossOn;
         f.hitBoxes = HitBoxes;
         f.hitKinds |= 1u << HitBox::Ground | 1u << HitBox::Shot;
-        return shmup::MakeGame(donpachi::kCredits, f);
+        Game g = shmup::MakeGame(donpachi::kCredits, f);
+        // (the gadgets, port/gadgets.h: the rank over time; and the score and stage, for the score by stage)
+        using Kind = Gadget::Kind;
+        g.gadgets = {
+            {"RANK", Kind::Graph,
+             [](const Board &board) {
+                 return Playing(board) ? std::to_string(board.ram[donpachi::kRank & 0xFFFF]) + " / 63" : std::string();
+             },
+             [](const Board &board, int &value, int &most) {
+                 value = std::min<int>(board.ram[donpachi::kRank & 0xFFFF], donpachi::kRankMost);
+                 most = donpachi::kRankMost;
+                 return Playing(board);
+             },
+             0xFF4070FFu},
+        };
+        g.score = [](const Board &board) -> long long { return Playing(board) ? Score(board) : -1; };
+        g.stage = [](const Board &board) {
+            return Playing(board) ? (Word(board, donpachi::kLoop) ? 5 : 0) + std::min(Word(board, donpachi::kStage), 4) : -1;
+        };
+        g.stageNames = {"1-1", "1-2", "1-3", "1-4", "1-5", "2-1", "2-2", "2-3", "2-4", "2-5"};
+        return g;
     }();
     return game;
 }
