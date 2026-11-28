@@ -44,6 +44,12 @@ launcher::Description describe_game(const char *config) {
     }
     launcher::Description d;
     d.original = "in the arcade";
+    // (the launcher shows only what is set before a game starts: port/main.cpp's --list-features marks them; the board's
+    // own settings are a card on each game's page, the rest is the in-game menu's)
+    d.launcher_features_only = true;
+    d.board_category = "Board";
+    d.features_name = "Settings";
+    d.layout = launcher::Description::Layout::Tabs;
     d.file_heading = "ROM SET";
 #ifdef __ANDROID__
     // (Android: the set is copied into the app's folder; the screen's controls have a Menu button, and Back opens it)

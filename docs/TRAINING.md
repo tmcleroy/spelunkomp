@@ -3,7 +3,7 @@
 What the collection gives for learning these games, what each part rests on and how it is checked. The list of what
 is still to come is in ROADMAP.md.
 
-Everything here is a feature (the launcher's Features page, the in-game menu's Training mode page under Alternative modes), off unless chosen: with
+Everything here is a feature (the in-game menu's Training tab, and its Modes tab for Dodge training and attract mode), off unless chosen: with
 all of them off the game plays exactly as the board. None of them adds a frame of lag: the practice point and rewind
 do their keeping after a frame is on show.
 

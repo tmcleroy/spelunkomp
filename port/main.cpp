@@ -435,7 +435,20 @@ int main(int argc, char **argv) {
                 fprintf(stderr, "%s\n", BoardSettingsProblem().c_str()); // (game.cfg's board options: runtime/board_settings.h)
                 return 1;
             }
-            fputs(port::FeatureListFor(AllFeatures()).c_str(), stdout); // (the launcher's Features page, and its note)
+            // (what the launcher shows, all else being the in-game menu's alone: what has to be set before the game starts,
+            // recomp-common settings.h's kFeatureLauncher. The board's own settings are a card on the game's page, and
+            // the autofire is the Controllers page's: launcher/src/description.cpp)
+            static const char *const kInLauncher[] = {
+                "renderer",                                                     // how the picture is drawn
+                "crt_resolution", "crt_screen", "crt_monitor", "crt_switchres", // the arcade monitor's mode
+            };
+            std::vector<recomp::FeatureInfo> list = AllFeatures();
+            for (recomp::FeatureInfo &f : list) {
+                if (std::any_of(std::begin(kInLauncher), std::end(kInLauncher), [&f](const char *name) { return f.name == name; })) {
+                    f.flags |= recomp::kFeatureLauncher;
+                }
+            }
+            fputs(port::FeatureListFor(list).c_str(), stdout); // (the launcher's Settings page, and its note)
             return 0;
         }
         if (a == "--game" && i + 1 < argc) {
@@ -1607,7 +1620,20 @@ int main(int argc, char **argv) {
                         recomp::MenuRow(recomp::MenuRow::Action, 2, recomp::layout::kTestMenu,
                                         "The board's test switch: the game's test menu: its settings, tests and bookkeeping.")};
         rows.resetDescription = "Starts the board again from power on.";
-        recomp::layout::Standard(mc, rows);
+        // (as tabs: layout::Tabbed, which lays out the pages as Standard does as well)
+        recomp::layout::Tabbed(mc, rows);
+        // (an option's default, which X puts back and against which a row shows as changed: as the Enhanced preset has
+        // it, as Reset all options puts it; the Shader's Your own row has none but its first)
+        {
+            recomp::Ini preset("");
+            recomp::SetPreset(preset, AllFeatures(), "enhanced");
+            std::vector<int> defaults = recomp::FeatureValues(preset, AllFeatures());
+            mc.defaultValue = [defaults = std::move(defaults), ownAt, menuFeature](size_t at) {
+                return at == ownAt || menuFeature(at) >= defaults.size() ? 0 : defaults[menuFeature(at)];
+            };
+        }
+        mc.tabsName = recomp::sdl::kTabsName;
+        mc.backName = recomp::sdl::kBackName;
         setHostRow(false);
         if (speedAtStart >= 0) {
             menu.SetSpeed(speedAtStart);
@@ -1900,6 +1926,22 @@ int main(int argc, char **argv) {
             say("SCREENSHOT NOT SAVED");
         }
     };
+    // The game's last picture, left in its folder beside settings.ini when it is quit from the menu: the launcher's tile for
+    // it (picture.png, recomp-common/launcher). Not from a test's run, nor a start that went straight back out
+    auto keepPicture = [&]() {
+        if (settingsPath.empty() || checkVideo || frameCount < 600) {
+            return;
+        }
+        std::vector<uint32_t> board(static_cast<size_t>(Hw::kWidth) * Hw::kHeight), out;
+        readScreen(board.data());
+        int w = 0, h = 0;
+        canvasSize(w, h);
+        TurnTo(board.data(), turnNow(), w, h, out);
+        const std::filesystem::path path = std::filesystem::path(settingsPath).parent_path() / "picture.png";
+        if (!WritePng(path.string().c_str(), out.data(), static_cast<uint32_t>(w), static_cast<uint32_t>(h))) {
+            fprintf(stderr, "picture: could not write %s\n", path.string().c_str());
+        }
+    };
     // The scene export (port/scene.h): the picture taken apart, each of the board's layers by itself, turned as the
     // player sees it; the shape of a pixel as shown (the Aspect feature's); the hit boxes shown, listed and drawn as a
     // layer of their own at the board's pixels; and the tools' writing (not the notes, which say what was saved), a
@@ -2090,7 +2132,10 @@ int main(int argc, char **argv) {
                 menu.Note("No state in that slot (or one from another version).");
             }
             break;
-        case recomp::Menu::Chosen::Quit: running = false; break;
+        case recomp::Menu::Chosen::Quit:
+            keepPicture(); // (before the menu goes: the game's picture, not the menu's)
+            running = false;
+            break;
         case recomp::Menu::Chosen::Command:
             // (the first command: Host a match, or Stop hosting; the second: Begin at the stage; then the game's own,
             // each of which begins a new game its own way: Game::command; then Frame advance and Attract mode's Start)
