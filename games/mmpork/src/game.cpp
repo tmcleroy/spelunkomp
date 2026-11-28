@@ -4,7 +4,11 @@
 #include "../../../runtime/shmup.h"
 #include "mmpork.h"
 
+#include <algorithm>
+#include <cstdio>
 #include <iterator>
+#include <string>
+#include <vector>
 
 namespace spelunk {
 
@@ -104,6 +108,79 @@ namespace {
         SetLong(board, kScript, kFirstStage + stage * kBeginStageSize);
         return true;
     }
+    // While a game is played: the lard meter's word is the record's, nonsense before the first game
+    bool Playing(const Board &board) {
+        const uint32_t a = mmpork::kLard & (SH3::kRamSize - 1);
+        const unsigned lard = static_cast<unsigned>(board.ram[a]) << 8 | board.ram[a + 1];
+        return lard <= mmpork::kLardFull && Long(board, mmpork::kScore1) < 1000000000u;
+    }
+    unsigned Word(const Board &board, uint32_t address) {
+        const uint8_t *p = &board.ram[address & (SH3::kRamSize - 1)];
+        return static_cast<unsigned>(p[0]) << 8 | p[1];
+    }
+    // The boss's life now and its phase (-1: no boss), as the MAME layout reads it (mmpork.h's kEnemies)
+    struct BossPhase {
+        uint32_t kind;
+        int phase;
+        std::vector<uint32_t> parts; // (the parts whose life counts, first to last)
+    };
+    bool BossLife(const Board &board, int &life, int &phase) {
+        using namespace mmpork;
+        // (kind, the part its phase is read from, then each phase's parts: the layout's table)
+        struct Boss {
+            uint32_t kind, phasePart;
+            std::vector<BossPhase> phases;
+        };
+        static const std::vector<Boss> kBosses = {
+            {73, 0, {{73, 1, {13}}}},                                   // stage 1's midboss
+            {80, 0, {{80, 1, {22, 0}}}},                                // stage 1's boss
+            {74, 0, {{74, 1, {0}}}},                                    // stage 2's midboss
+            {81, 0, {{81, 1, {51}}, {81, 3, {7}}, {81, 5, {5}}}},       // stage 2's boss
+            {75, 0, {{75, 1, {0}}}},                                    // stage 3's midboss
+            {82, 0, {{82, 1, {0, 1}}}},                                 // stage 3's boss
+            {76, 0, {{76, 1, {45, 0}}}},                                // stage 4's first midboss
+            {77, 0, {{77, 1, {0}}}},                                    // stage 4's second
+            {83, 0, {{83, 1, {62}}, {83, 3, {48}}, {83, 5, {0}}}},      // stage 4's boss
+            {79, 0, {{79, 0, {0}}}},                                    // stage 5's first midboss
+            {78, 0, {{78, 1, {0}}}},                                    // stage 5's second
+            {21, 0, {{21, 0, {3}}}},                                    // stage 5's painting
+            {84, 0, {{84, 1, {56}}, {84, 3, {26}}, {84, 5, {0, 42}}}},  // stage 5's boss
+        };
+        phase = -1;
+        life = 0;
+        const Boss *boss = nullptr;
+        // (the boss's phase, from the part the table names; then the first of that phase's parts still alive)
+        for (int i = 0; i < kEnemyCount; i++) {
+            const uint32_t at = kEnemies + static_cast<uint32_t>(i * kEnemySize);
+            const uint32_t kind = Long(board, at + kEnemyKind), part = Long(board, at + kEnemyPart);
+            for (const Boss &b : kBosses) {
+                if (b.kind == kind && b.phasePart == part) {
+                    boss = &b;
+                    phase = board.ram[(at + kEnemyPhase) & (SH3::kRamSize - 1)];
+                }
+            }
+        }
+        if (!boss) {
+            return false;
+        }
+        for (const BossPhase &p : boss->phases) {
+            if (p.phase != phase) {
+                continue;
+            }
+            for (const uint32_t want : p.parts) {
+                for (int i = 0; i < kEnemyCount; i++) {
+                    const uint32_t at = kEnemies + static_cast<uint32_t>(i * kEnemySize);
+                    if (Long(board, at + kEnemyKind) == boss->kind && Long(board, at + kEnemyPart) == want) {
+                        if (const int l = static_cast<int>(Word(board, at + kEnemyLife)); l > 0) {
+                            life = l;
+                            return true;
+                        }
+                    }
+                }
+            }
+        }
+        return false;
+    }
 } // namespace
 
 const Game &ThisGame() {
@@ -136,6 +213,51 @@ const Game &ThisGame() {
                            return lard <= mmpork::kLardFull ? std::to_string(lard) + "/" + std::to_string(mmpork::kLardFull) : std::string();
                        }}};
         g.readoutsWhat = "the lard meter as a number (104 full)";
+        // (the gadgets, port/gadgets.h: what wnka's MAME layout for the game shows)
+        using Kind = Gadget::Kind;
+        g.gadgets = {
+            {"RANK", Kind::Graph,
+             [](const Board &board) {
+                 if (!Playing(board)) {
+                     return std::string();
+                 }
+                 char words[24];
+                 const double v = (static_cast<double>(mmpork::kRankLowest) - static_cast<int32_t>(Long(board, mmpork::kRank))) / mmpork::kRankSpan;
+                 snprintf(words, sizeof words, "%.2f%%", v * 100);
+                 return std::string(words);
+             },
+             [](const Board &board, int &value, int &most) {
+                 const long long below = static_cast<long long>(mmpork::kRankLowest) - static_cast<int32_t>(Long(board, mmpork::kRank));
+                 most = 1 << 16;
+                 value = static_cast<int>(std::clamp<long long>(below >> 8, 0, most));
+                 return Playing(board);
+             },
+             0xFF4070FFu},
+            {"LARD", Kind::Meter,
+             [](const Board &board) {
+                 return Playing(board) ? std::to_string(Word(board, mmpork::kLard)) + " / " + std::to_string(mmpork::kLardFull) : std::string();
+             },
+             [](const Board &board, int &value, int &most) {
+                 value = static_cast<int>(Word(board, mmpork::kLard));
+                 most = mmpork::kLardFull;
+                 return Playing(board);
+             },
+             0xFF8080FFu},
+            {"NEXT MEDAL", Kind::Words, [](const Board &board) {
+                 if (!Playing(board)) {
+                     return std::string();
+                 }
+                 const int n = board.ram[mmpork::kNextMedal & (SH3::kRamSize - 1)];
+                 return n <= 18 ? std::to_string(n < 9 ? (n + 1) * 100 : (n - 8) * 1000) : std::string();
+             }},
+            {"BOSS", Kind::Words, [](const Board &board) {
+                 int life = 0, phase = 0;
+                 if (!Playing(board) || !BossLife(board, life, phase)) {
+                     return std::string();
+                 }
+                 return "LIFE " + std::to_string(life) + "  PHASE " + std::to_string(phase);
+             }},
+        };
         return g;
     }();
     return game;

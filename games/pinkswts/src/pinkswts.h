@@ -89,4 +89,24 @@ constexpr uint32_t kShots = 0x0C4A3ACCu, kShotsApart = 0x4200, kShotCount = 0x0C
 constexpr uint32_t kOtherBank = 0x0C3B0F24u, kOtherOn = 0x0C4240B6u, kOtherGroups = 0x0C4240BAu, kOtherCount = 0x0C3B298Eu;
 constexpr uint32_t kOther = 0x0C3B108Cu, kOtherBankApart = 0xC60, kOtherGroupApart = 0x420;
 
+// --- What the gadgets read (port/gadgets.h). From Olifante's MAME layout for the game (v0.9, linked from
+// epozzobon.it/re), checked 2026-11-27 against RAM dumps here at frames 3,500 and 5,000 of a game: the score 38,100 as
+// the picture showed it, the rank, the zan counter, the drop and the medal all moving as play went on ---
+// Player 1's score (a long), and player 1's record (its first long's top bit set while a player flies it)
+constexpr uint32_t kScore1 = 0x0C49C874u, kPlayer1 = 0x0C49C5DCu;
+// The rank (a long, counted DOWN as it rises: the layout shows 1 - rank / 0x1000000; 19% to 20% over those frames)
+constexpr uint32_t kRank = 0x0C453AB0u;
+// The zan counter (the layout's: the word at kZan less the word at kZanLess; 78 then 132)
+constexpr uint32_t kZan = 0x0C4A3AB6u, kZanLess = 0x0C3AE102u;
+// The next drop (a byte: its place in the game's round of eight, bullet, rose, double, rose, triple, rose, option,
+// rose); the shot and option power-ups dropped (bytes)
+constexpr uint32_t kNextDrop = 0x0C4240A4u, kShotsDropped = 0x0C5C16F8u, kOptionsDropped = 0x0C5C16F9u;
+// The next medal's worth (a byte: 0 to 8 for 100 to 900, 9 to 18 for 1,000 to 10,000)
+constexpr uint32_t kNextMedal = 0x0C5C0162u;
+// The enemies (256 records of 204 bytes): a long of flags (top bit: in use; 0x4000: not hittable), its kind (a long at
+// +4), its part (+8), its life (a word at +68), its phase (a byte at +184). The bosses' kinds and the part whose life
+// counts are the layout's table (game.cpp's BossLife)
+constexpr uint32_t kEnemies = 0x0C416968u;
+constexpr int kEnemyCount = 256, kEnemySize = 204, kEnemyKind = 4, kEnemyPart = 8, kEnemyLife = 68, kEnemyPhase = 184;
+
 } // namespace spelunk::pinkswts

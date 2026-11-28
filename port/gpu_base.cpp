@@ -544,7 +544,7 @@ void GpuBase::Draw(SDL_GPUCommandBuffer *cmd, SDL_GPUTexture *target, bool clear
         const SDL_GPUViewport viewport{whole->x, whole->y, whole->w, whole->h, 0, 1};
         SDL_SetGPUViewport(pass, &viewport);
         SDL_BindGPUGraphicsPipeline(pass, m_overlayPipeline);
-        const SDL_GPUTextureSamplerBinding layer{m_layer, m_linear ? m_linear : m_nearest};
+        const SDL_GPUTextureSamplerBinding layer{m_layer, m_linear && !m_layerSharp ? m_linear : m_nearest};
         SDL_BindGPUFragmentSamplers(pass, 0, &layer, 1);
         SDL_DrawGPUPrimitives(pass, 3, 1, 0, 0);
     }
@@ -608,8 +608,9 @@ void GpuBase::SetOverlay(const uint32_t *pixels, int width, int height) {
     }
 }
 
-void GpuBase::SetWindowLayer(const uint32_t *pixels, int width, int height) {
+void GpuBase::SetWindowLayer(const uint32_t *pixels, int width, int height, bool sharp) {
     m_layerOn = pixels != nullptr && m_device != nullptr;
+    m_layerSharp = sharp;
     if (m_layerOn) {
         Upload(m_layer, m_layerW, m_layerH, pixels, width, height);
     }

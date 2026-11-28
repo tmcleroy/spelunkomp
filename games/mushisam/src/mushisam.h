@@ -70,4 +70,34 @@ constexpr uint32_t kShotHeaders = 0x0C2681B0u, kShotHeaderCount = 0x0C26FEB0u;
 // The lasers, the same: each tested against every enemy (from 0x0C09D690); the bombs' list (0x0C246D20) is not drawn
 constexpr uint32_t kLaserHeaders = 0x0C2D32A0u, kLaserHeaderCount = 0x0C2D3290u;
 
+// --- What the gadgets show (found 2026-11-27 by RAM dumps of real play, SPELUNK_WATCH on the writes, and the code that
+// writes each; player 1's record is at kShipRecord and the words below are all 32 bits) ---
+// The mode played: 0 Original, 1 Maniac (2 is taken to be Ultra: the code tests for 0, 1 and 2; Ultra was not played).
+// Found by diffing a dump of each mode's play; it is set as play begins, so 0 before a mode is chosen
+constexpr uint32_t kMode = 0x0C1ED040u;
+// The counter Maniac and Ultra show under the ships as "+N" (the number was read off the picture at three moments
+// and the word matched each: +30, +18, +6). It is set to a hit's value when that is higher (the write at 0x0C05EB80)
+// and, once the timer below has run out, counts down in steps that grow with it: 2 up to 199, 8 up to 499, 24 up to
+// 999, 48 up to 4999, 96 up to 9999 (the table at 0x0C05E732; found reading the code at 0x0C05E5E6). 0 all through
+// Original, which has none. Its top is not known (the steps go on to 49999)
+constexpr uint32_t kCounter = 0x0C1ED3B4u;
+// A countdown beside it (written every frame by 0x0C05E5F6 and reloaded by the loop at 0x0C05E6D0): probably the
+// frames the counter holds before it falls. Not checked against the counter, so the gadgets do not use it
+constexpr uint32_t kCounterHold = 0x0C1ED3B8u;
+// The score items taken, a count for each kind (0x0C05F110 adds one as the ship takes an item; its kind is the
+// item's +48). Kind 0 matched the 100-point items (35 counted, 36 times the game gave 100 points in the same run),
+// kind 2 the 200-point ones (6 and 7) and kind 3 the 500-point ones (3 and 3); kind 1 (0x0C1ED3A4) was never taken. The counts
+// went back to 0 once between two looks after a ship was lost (the game sets the record up again), so they are
+// since the last time the game did that
+constexpr uint32_t kItemsKind0 = 0x0C1ED3A0u, kItemsKind2 = 0x0C1ED3A8u, kItemsKind3 = 0x0C1ED3ACu;
+// The extra ship (found by diffing dumps taken before and after the score went past the first threshold, and the
+// code at 0x0C05E5C0-0x0C05E726 that tests it). A record at kExtend (the ship record + 0x7C): +8, +12 and +16 are
+// the scores to take a ship at, in order, 0xFFFFFFFF ending the list; +20 is how many are taken (it went 0 to 1 as
+// the score was held just past the first); +24 is 0 for a list and 1 for "every so many points": then +8 is the next
+// score and +12 is added to it each time. The record is set from a table by the board's extend setting (the tables
+// are at 0x0C1C6E78 Original, 0x0C1C6EC8 Maniac, 0x0C1C6F18 Ultra, 16 bytes a setting; the default setting is 2.5
+// million and 5 million in Original, 10 million and 25 million in Maniac and Ultra)
+constexpr uint32_t kExtend = 0x0C1ED3CCu;
+constexpr uint32_t kExtendList = 0x0C1ED3D4u, kExtendTaken = 0x0C1ED3E0u, kExtendEvery = 0x0C1ED3E4u;
+
 } // namespace spelunk::mushisam

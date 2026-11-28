@@ -4,7 +4,10 @@
 #include "../../../runtime/shmup.h"
 #include "ibara.h"
 
+#include <algorithm>
+#include <cstdio>
 #include <iterator>
+#include <string>
 
 namespace spelunk {
 
@@ -97,6 +100,10 @@ namespace {
         Byte(board, kStagesBegun) = static_cast<uint8_t>(1 + stage);
         return true;
     }
+    // (a rank of the range the layout knows: the long holds other things before the first game)
+    bool Playing(const Board &board) {
+        return Long(board, ibara::kRank) < 0x1000000u;
+    }
 } // namespace
 
 const Game &ThisGame() {
@@ -114,7 +121,43 @@ const Game &ThisGame() {
         f.bossTunes.assign(std::begin(ibara::kBossTunes), std::end(ibara::kBossTunes));
         f.hitBoxes = HitBoxes;
         f.hitKinds |= 1u << HitBox::Ground | 1u << HitBox::Shot;
-        return shmup::MakeGame(ibara::kCredits, f);
+        Game g = shmup::MakeGame(ibara::kCredits, f);
+        // (the gadgets, port/gadgets.h: what the MAME layout for the game shows)
+        using Kind = Gadget::Kind;
+        g.gadgets = {
+            {"RANK", Kind::Graph,
+             [](const Board &board) {
+                 char words[24];
+                 snprintf(words, sizeof words, "%.2f%%", (1.0 - Long(board, ibara::kRank) / 16777216.0) * 100);
+                 return Playing(board) ? std::string(words) : std::string();
+             },
+             [](const Board &board, int &value, int &most) {
+                 most = 1 << 16;
+                 value = std::clamp(static_cast<int>((0x1000000 - static_cast<long long>(Long(board, ibara::kRank))) >> 8), 0, most);
+                 return Playing(board);
+             },
+             0xFF4070FFu},
+            {"NEXT DROPS", Kind::Words, [](const Board &board) {
+                 if (!Playing(board)) {
+                     return std::string();
+                 }
+                 auto drop = [](unsigned at) {
+                     at %= 25;
+                     return at == 24 ? "LARGE SHOT" : at % 5 == 4 ? "OPTION" : at % 5 % 2 == 0 ? "SHOT" : "MEDAL";
+                 };
+                 const unsigned n = board.ram[ibara::kNextDrop & (SH3::kRamSize - 1)];
+                 std::string out;
+                 for (unsigned i = 0; i < 4; i++) {
+                     out += (i ? "\n " : ">") + std::string(drop(n + i));
+                 }
+                 return out;
+             }},
+            {"NEXT MEDAL", Kind::Words, [](const Board &board) {
+                 const unsigned n = board.ram[ibara::kNextMedal & (SH3::kRamSize - 1)];
+                 return Playing(board) && n <= 18 ? std::to_string(n < 9 ? (n + 1) * 100 : (n - 8) * 1000) : std::string();
+             }},
+        };
+        return g;
     }();
     return game;
 }

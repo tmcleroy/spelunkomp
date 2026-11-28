@@ -35,3 +35,11 @@ Everything by hand: nobody has played it or listened to it yet. The sound was on
 ## Training
 
 Start at stage (1-5), out of harm, endless bombs and ships (docs/TRAINING.md); the practice point, rewind and fast forward every game has. The facts are in src/mushisam.h.
+
+## Gadgets (panels beside the picture, 2026-11-27)
+
+Score and stage (for score by stage), the Maniac/Ultra counter (the "+N" under the ships: a graph and the number), the
+score items taken (100, 200 and 500 points) and the score the next extra ship comes at, all read from RAM; addresses and
+how each was confirmed are in src/mushisam.h. Not found: a rank (nothing in memory that grows with play, and sets bullet
+speed or count, was found; the words at 0x0C1ED07C-0x0C1ED084 grow with time only and were not tied to bullets), the
+shot power level and the power items. Ultra's mode word (2) and the counter's top were not checked.

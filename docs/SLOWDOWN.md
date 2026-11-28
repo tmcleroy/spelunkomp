@@ -82,10 +82,14 @@ same points with the same counts, so the two stay equal (`--timing` on the headl
 tools/check.sh`). With the feature off nothing is asked and the games run exactly as before. The model's state is
 plain data, part of save states (now "spelunkomp state 5"), run-ahead and the training tools' moments. The paths it
 has found between two events (`Sh3Paths`: a loop takes the same one every turn, and finding it is most of the
-model's work) are kept apart from the state, 8,192 of them, each made ready to run when it is found (the lines it is
+model's work) are kept apart from the state, 32,768 of them, each made ready to run when it is found (the lines it is
 fetched from, and the pipeline's steps that depend on the time with the cycles between them added up): a path
 depends on the code under it alone, each block of 128 bytes of RAM a kept path read notes the time of its last write
-(by the CPU or the DMA), and a state loaded forgets them all, so which paths are kept changes no count.
+(by the CPU or the DMA), and a state loaded forgets them all, so which paths are kept changes no count. Finding a
+kept path is mostly waiting on memory, so each is one 64-byte cache line, the two places a path can be kept side by
+side, a plan of more than two fetches or steps apart; with four times the paths of before, the headless runner from
+the boss runs 11.8% faster on a Steam Machine for SaiDaiOuJou, 8.9% for Muchi Muchi Pork, 8.0% for Akai Katana's
+stage 1 (SPELUNK_MEMO_BITS=13 or 14 keeps 8,192 or 16,384).
 
 ## Checked against the board
 

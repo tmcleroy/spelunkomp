@@ -24,8 +24,12 @@ Set: MAME's `ddonpach` (World, 1997 2/5 Master Ver.), on Cave's 68000 board (doc
   hit test (0057EE) reads them; facts in ddonpach.h.
 - Dodge training (docs/DODGE.md; games/ddonpach/src/dodge.cpp): an emitter in a boss's arena fires the game's own
   patterns, 439 of them taken from recordings of play (tools/dodge), made by the game's bullet routines.
-- Not yet: the second loop as a start (2-1 to 2-6), the scoring readouts (the game shows its own hit
-  counter; rank is hidden and not found), the Japanese set (`ddonpachj`: the same board, two other program ROMs).
+- Gadgets (2026-11-27, game.cpp): the rank (0 to 63, 101969) as a graph, the chain's timer with hits and the
+  best chain, the bees (this stage, sets of 13), the second loop's test as the game makes it (040038 on), and the score
+  and stage (the second loop's after the first's) for Score by stage.
+- Not yet: the second loop as a start (2-1 to 2-6), a boss health meter, what the rank does to the bullets' speed in
+  each enemy (the rank is found and read by the enemies' code at 010A68 on; no single "bullet speed" word exists), the
+  Japanese set (`ddonpachj`: the same board, two other program ROMs).
 
 ## Facts found
 

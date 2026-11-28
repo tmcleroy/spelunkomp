@@ -46,6 +46,22 @@ struct Readout {
     std::string (*value)(const Board &board);
 };
 
+// A gadget (the feature "Gadgets", port/gadgets.h): a framed panel beside the picture, in the window's space
+// the picture leaves at its sides. Read from the game's memory each
+// frame shown, never written to it. A Words gadget shows `words` (lines broken at '\n'; "": the gadget not shown, as
+// between games); a Meter its `level` as a bar, with `words` beside it; a Graph its `level` kept over the last
+// half a minute as a line (the rank graph), the value now with `words` under it. `level` gives the value now and the
+// most it can be; false: none now (the gadget not shown, and a Graph's line begun again)
+struct Gadget {
+    enum class Kind { Words, Meter, Graph };
+    const char *title;
+    Kind kind = Kind::Words;
+    std::string (*words)(const Board &board) = nullptr;
+    bool (*level)(const Board &board, int &value, int &most) = nullptr;
+    uint32_t colour = 0xFFFFC040u; // (the bar's or the line's: red in the low byte)
+    bool right = false;            // (the picture's right side; the left otherwise)
+};
+
 struct Game {
     std::vector<recomp::FeatureInfo> features;
     // Before each frame, with each feature's value (in the order of `features`)
@@ -78,6 +94,15 @@ struct Game {
     std::vector<Readout> readouts;
     // (what the readouts feature's description says they are, after "Shown down the left of the picture: ")
     const char *readoutsWhat = nullptr;
+    // The game's own gadgets (Gadget above); every game also has the toolkit's: the controls held, and with `score`
+    // and `stage` the score each stage made
+    std::vector<Gadget> gadgets;
+    // Player 1's score now, and the stage played (0 the first; a second loop's stages after the first loop's), while
+    // a player's game is played; -1 otherwise (the attract show's, the title): the "Score by stage" gadget
+    long long (*score)(const Board &board) = nullptr;
+    int (*stage)(const Board &board) = nullptr;
+    // (the stages' names for that gadget, in order; none: their numbers)
+    std::vector<std::string> stageNames;
 };
 // The game's own (games/<id>/src)
 const Game &ThisGame();

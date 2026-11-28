@@ -25,6 +25,24 @@ constexpr uint32_t kBombs = 0x0C510D3Cu;
 // then stayed at 104 with the bar full)
 constexpr uint32_t kLard = 0x0C510D36u;
 constexpr uint32_t kLardFull = 104;
+
+// --- What the gadgets read (port/gadgets.h). From the MAME layout for this game by wnka
+// (github.com/wnka/muchi-muchi-pork-mame-overlay, made from Olifante's for Pink Sweets, its places found with MAME's
+// debugger), checked 2026-11-27 against RAM dumps of a game here: the score at frame 4900 read 54,120 as the picture
+// showed it, and the rank went down from 0xD7351A to 0xD69678 over the stage's next 1,400 frames ---
+// Player 1's score (a long)
+constexpr uint32_t kScore1 = 0x0C510D50u;
+// The rank (a long, counted DOWN as it rises: 0xE7FFF0 is the layout's lowest, and its bar fills by 0x1000000 below it)
+constexpr uint32_t kRank = 0x0C4EB5F4u;
+constexpr uint32_t kRankLowest = 0xE7FFF0u, kRankSpan = 0x1000000u;
+// The next medal's worth (a byte: 0 to 8 for 100 to 900, 9 to 18 for 1,000 to 10,000)
+constexpr uint32_t kNextMedal = 0x0C53F4A7u;
+// The enemies (192 records of 200 bytes): a record's kind (a long at +8), its part of a boss (a long at +12), its life
+// (a word at +68) and the boss's phase (a byte at +180, odd numbers). The layout's table of the bosses' kinds, and for
+// each phase which part's life is the one that counts (until the first is destroyed the next takes no damage), is
+// game.cpp's BossLife; the layout says boss 2 and stage 4's first midboss read oddly
+constexpr uint32_t kEnemies = 0x0C4B7C9Cu;
+constexpr int kEnemyCount = 192, kEnemySize = 200, kEnemyKind = 8, kEnemyPart = 12, kEnemyLife = 68, kEnemyPhase = 180;
 // Out of harm while flown, the frames counted to 60 while lost (a byte, record +0x21E): held at 59, both at once
 // (Ibara's kSafeFrames; the first finding held it at a value the count to 60 never meets, so a ship lost at that moment
 // never came back)
