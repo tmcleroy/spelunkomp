@@ -105,11 +105,12 @@ mouse moves, bullets as dots by kind; the preview steps the same rules frame by 
 motions, the game's two aims, from bullets.md) so what is seen is what the game will fire; a frame slider, a rank
 and level slider, and the JSON beside the form.
 
-## Open (for the owner)
+## Owner's decisions (2026-11-28)
 
-1. The game's own boss attacks as files: written by hand from the write-ups they are the game's design in numbers.
-   Ship them (a "built-in" set), or only make them on the player's machine (a step like the recordings), or not at
-   all (players start from a blank file and the recorded patterns stay as they are)?
-2. Boss life: phases switched by life (most bosses' last attack) need a life the emitter can lose; shooting the
-   emitter (the game's hit test on its object), or by time only?
-3. The look of player-made patterns: one of the game's bosses' looks, or simple shapes?
+1. The game's own attacks are made on the player's machine: their numbers are read from the player's program at the
+   places the write-ups give (no recording run, so no wait), into the same form; nothing of the game's is shipped.
+2. The emitter can be shot: it has a life, and phases switched by life switch as it is damaged.
+3. Player-made patterns are drawn as simple shapes for now.
+
+The editor: sliders, toggles and every control the vocabulary needs, a live preview, files exported to play in Dodge
+training and to share with other players.
