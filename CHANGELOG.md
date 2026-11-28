@@ -5,6 +5,9 @@ Versions follow [Semantic Versioning](https://semver.org/).
 
 ## Unreleased
 
+- **Android and Linux ARM64 built with a profile**, as Linux x86_64 and Windows are: the same counts as Linux
+  x86_64's, since clang counts the source, not the processor. About 8% faster at SaiDaiOuJou's boss and 7% at Muchi
+  Muchi Pork's (Linux ARM64 on a MacBook Air), the same frames (the state hash each frame), and a smaller app.
 - **The slowdown's timing model finds its paths faster**: the paths it keeps are one cache line each, and four
   times as many fit. The same counts, so the same slowdown, frames and picture. Headless from the boss on a Steam
   Machine: SaiDaiOuJou 11.8% faster, Muchi Muchi Pork 8.9%, Akai Katana (stage 1) 8.0%.

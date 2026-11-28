@@ -103,19 +103,25 @@ pgo_build() {
         rm -f "$BUILD/pgo-built"
         { "$1"; : > "$BUILD/pgo-built"; } 2>&1 | tee "$log" | grep -v -e 'Wprofile-instr-unprofiled' -e '^[0-9]* warnings\{0,1\} generated\.$' || true
         [ -f "$BUILD/pgo-built" ] || { echo "error: the build failed ($log)" >&2; exit 1; }
-        # (each game's files built, and those of them with no counts: its lines end with "<game>: built"; the launcher last)
-        awk '/Building C(XX)? object/ { files++ } /Wprofile-instr-unprofiled/ { none++ }
-            /^[a-z0-9_]+: built$/ { name = $1; sub(/:$/, "", name); report(name) }
-            END { report("launcher"); if (bad) print "warning: " bad " program(s) built with no counts in any file: the counts are not theirs (PGO_USE the wrong folder, or made from other source)" > "/dev/stderr" }
-            function report(name) {
-                printf "PGO: %s: %d of %d files built with no counts\n", name, none, files
-                if (files > 0 && none == files) bad++
-                files = 0; none = 0
-            }' "$log"
-        echo "PGO: $(grep -c 'Wprofile-instr-out-of-date' "$log" || true) files with functions whose counts are from other source (-Wprofile-instr-out-of-date, $log)"
+        pgo_report "$log"
     else
         "$1"
     fi
+}
+# pgo_report LOG: from a build's log with the counts (PGO_USE), each program's files with no counts summed up, and
+# the files whose counts are from other source
+pgo_report() {
+    log=$1
+    # (each game's files built, and those of them with no counts: its lines end with "<game>: built"; the launcher last)
+    awk '/Building C(XX)? object/ { files++ } /Wprofile-instr-unprofiled/ { none++ }
+        /^[a-z0-9_]+: built$/ { name = $1; sub(/:$/, "", name); report(name) }
+        END { report("launcher"); if (bad) print "warning: " bad " program(s) built with no counts in any file: the counts are not theirs (PGO_USE the wrong folder, or made from other source)" > "/dev/stderr" }
+        function report(name) {
+            printf "PGO: %s: %d of %d files built with no counts\n", name, none, files
+            if (files > 0 && none == files) bad++
+            files = 0; none = 0
+        }' "$log"
+    echo "PGO: $(grep -c 'Wprofile-instr-out-of-date' "$log" || true) files with functions whose counts are from other source (-Wprofile-instr-out-of-date, $log)"
 }
 # pgo_made FILE SYSTEM: what a training build's counts are made from (PGO_USE says so, and warns where the build is
 # not that)

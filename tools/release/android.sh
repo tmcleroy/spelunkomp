@@ -51,6 +51,20 @@ if [ -z "${JAVA_HOME:-}" ] && [ -d /opt/homebrew/opt/openjdk@17 ]; then
     export JAVA_HOME=/opt/homebrew/opt/openjdk@17
 fi
 STRIP=$(ls -d "$NDK"/toolchains/llvm/prebuilt/*/bin/llvm-strip | head -1)
+# Profile-guided optimisation: PGO_USE=folder builds the libraries with the counts made on Linux
+# (tools/release/run-pgo-linux.sh, docs/RELEASING.md). Clang's counts are of the source, not of the processor, so the
+# Linux x86_64 ones fit ARM64: SaiDaiOuJou's boss 8% faster, Muchi Muchi Pork's 7% (Linux ARM64 on a MacBook Air,
+# M4, 2026-11-27, the same state hashes). There is no instrumented Android build (PGO_GENERATE): no Android device
+# plays the games for counts.
+if [ "${PGO_GENERATE:-}" = 1 ]; then
+    echo "error: no instrumented Android build: the counts are made on Linux (run-pgo-linux.sh)" >&2
+    exit 1
+fi
+NDK_BIN=$(dirname "$STRIP")
+PATH_BEFORE=$PATH
+PATH="$NDK_BIN:$PATH" # (the counts merged by the NDK's llvm-profdata, for its clang)
+pgo_prepare "$NDK_BIN/clang" run-pgo-linux.sh
+PATH=$PATH_BEFORE
 ANDROID="-DCMAKE_TOOLCHAIN_FILE=$NDK/build/cmake/android.toolchain.cmake -DANDROID_ABI=arm64-v8a -DANDROID_PLATFORM=android-28 -DANDROID_STL=c++_static -Wno-deprecated"
 
 # SDL 3 as a shared library (SDL's Java half loads libSDL3.so by name)
@@ -62,12 +76,15 @@ if [ ! -f "$DEPS/sdl-android/lib/libSDL3.so" ]; then
     cmake --build "$DEPS/sdl-android-build" --target install >/dev/null
 fi
 # (the NDK's toolchain file warns of CMake versions to come, at length: that is left out of what is shown)
-if ! build_programs "$BUILD" $ANDROID -DSDL3_DIR="$DEPS/sdl-android/lib/cmake/SDL3" > "$BUILD.log" 2>&1; then
-    grep -v "^CMake Warning\|^  \|^$\|^This warning\|^Call Stack" "$BUILD.log" | tail -40 >&2
+# (the flags given every time, empty without PGO: a build folder's cache would keep the last ones)
+if ! build_programs "$BUILD" $ANDROID -DSDL3_DIR="$DEPS/sdl-android/lib/cmake/SDL3" -DCMAKE_C_FLAGS="$PGO_FLAGS" \
+    -DCMAKE_CXX_FLAGS="$PGO_FLAGS" -DCMAKE_SHARED_LINKER_FLAGS="$PGO_FLAGS" > "$BUILD.log" 2>&1; then
+    grep -v "^CMake Warning\|^  \|^$\|^This warning\|^Call Stack\|Wprofile-instr-unprofiled" "$BUILD.log" | tail -40 >&2
     echo "error: the build failed (all of it in $BUILD.log)" >&2
     exit 1
 fi
 grep ": built$" "$BUILD.log" || true
+[ -z "${PGO_USE:-}" ] || pgo_report "$BUILD.log"
 
 # The libraries: SDL's, the launcher's and each game's (stripped), and librashader's
 LIBS="$STAGED/jniLibs/arm64-v8a"
