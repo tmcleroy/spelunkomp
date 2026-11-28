@@ -93,6 +93,7 @@ runtime/shmup.h makes the features from them:
 | Dangun Feveron | all five (stages 2 to 5, sent on as the ship select ends) |
 | ESP Ra.De. | start at stage (2 to 6: the stage order's pointer moved on), straight to the boss, out of harm, characters that never run out, and the guard barrier never runs out in place of bombs (button 3; its gauge, a word at +0x46 of the character's record, 0x102750, kept full at 0xFA0) |
 | Guwange | all five. A later stage (2-7) is begun through the game's own stage end (070E78, as a boss dying calls it), after stage 1's tally; the boss is the life bar's word 0x20249C. Lives are a ceiling (0x2026DE) and the life under it (0x2026DA), 0xC00 a ship; both are raised together (`Facts::shipsAlso`) |
+| Akai Katana | ENERGY (Phantom form's energy as a number, against the most it can be now: the bar's 8,000 less the life's ceiling); score by stage. Its picture is wide: the panels need a window wider than 16:9 |
 | DoDonPachi Dai-Ou-Jou, Black Label | all five (stages 2 to 5 begun from the new game task's own stage) |
 | Ketsui | all five, at all five stages. Stage 4 is one the game only ever begins from stage 3's end (begun from a new game its scroll stands still and the picture stays black), so a game begun there is sent on into it as stage 3's end sends it (`Facts::sendOnStages` / `sendOn`): once the scroll task has had its first run, its speed, standing place and timer are set as stage 3's end leaves them, and the game's own timer begins the stage (0CCE86: 0C98CA, then 0CADE6), the scroll running in as from stage 3 while the ship is brought in. Tried: the stage's scenery and enemies against the same stage reached by play, and played on through its boss to stage 5; the trip to each stage's boss (all five arrive: 6,907, 8,104, 10,400, 12,373 and 23,671 frames of the board on the way); Begin at the stage at stage 4 |
 | Espgaluda | all five (the guard barrier's gauge kept full stands for the bombs; a later stage is reached through the game's own stage end, with its tally). Also the gems kept full (a word at 80EF04, 500 the most: Kakusei for as long as wanted) |
@@ -271,4 +272,4 @@ tall window).
 ## Not yet
 
 The other games' scoring readouts (Mushihimesama's rank, Espgaluda II's Kakusei multiplier, Futari's counters and
-multiplier: none found yet), the gadgets of Akai Katana and DoDonPachi II, Deathsmiles' item counter and Death Mode (docs/plans/GADGETS-RESEARCH.md: what the official ports show), score attack and the other modes (ROADMAP.md).
+multiplier: none found yet), the gadgets of DoDonPachi II, Akai Katana's katana parts, Deathsmiles' item counter and Death Mode (docs/plans/GADGETS-RESEARCH.md: what the official ports show), score attack and the other modes (ROADMAP.md).

@@ -5,13 +5,13 @@ Versions follow [Semantic Versioning](https://semver.org/).
 
 ## Unreleased
 
-- **Gadgets in thirteen more games**: ESP Ra.De. (score items and how far the counter goes, the power shot's
+- **Gadgets in fourteen more games**: ESP Ra.De. (score items and how far the counter goes, the power shot's
   multiplier and its time, the barrier), Espgaluda (Kakusei's multiplier, Overmode's level, gold and its step),
   Espgaluda II (Overmode's level, gold), every set of Mushihimesama Futari (the rank as a graph and what it is made
   of), Dangun Feveron (the rank as a graph, the cyborgs on the way to the extend) both sets of DonPachi and Guwange
-  (the rank as a graph) and Deathsmiles and its MegaBlack Label (the level chosen for each stage), each with the score
-  by stage. Read from the game's memory, never written: tools/check_gadgets.sh plays a game with them on and off and
-  finds every frame the same.
+  (the rank as a graph) Deathsmiles and its MegaBlack Label (the level chosen for each stage) and Akai Katana (Phantom
+  form's energy as a number), each with the score by stage. Read from the game's memory, never written:
+  tools/check_gadgets.sh plays a game with them on and off and finds every frame the same.
 - **SPEED**, a gadget every game has: the game's speed as a graph, so the slowdown shows where it comes.
 
 ## 0.6.0-beta.1

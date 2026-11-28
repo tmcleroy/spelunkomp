@@ -4,7 +4,9 @@
 #include "../../../runtime/shmup.h"
 #include "akatana.h"
 
+#include <algorithm>
 #include <iterator>
+#include <string>
 
 namespace spelunk {
 
@@ -109,6 +111,18 @@ namespace {
         const uint32_t total = Long(board, NS::kBarTotal), life = Long(board, NS::kShips);
         return total > life ? total - life : 0;
     }
+    // While a game is played (akatana.h's kGameOn)
+    bool Playing(const Board &board) {
+        return Long(board, akatana::kGameOn) == 1;
+    }
+    // Player 1's score (ten digits, the lowest first)
+    long long Score(const Board &board) {
+        long long n = 0;
+        for (int i = 9; i >= 0; i--) {
+            n = n * 10 + board.ram[(akatana::kScore + static_cast<uint32_t>(i)) & (SH3::kRamSize - 1)] % 10;
+        }
+        return n;
+    }
 } // namespace
 
 const Game &ThisGame() {
@@ -131,7 +145,30 @@ const Game &ThisGame() {
                                 akatana::kEnergy, 0, 4, EnergyFull});
         f.hitBoxes = BoxesNow;
         f.hitKinds |= 1u << HitBox::Ground | 1u << HitBox::Shot;
-        return shmup::MakeGame(akatana::kCredits, f);
+        Game g = shmup::MakeGame(akatana::kCredits, f);
+        // (the gadgets, port/gadgets.h: Phantom form's energy as a number, against the most it can be now; and the score
+        // and stage, for the score by stage)
+        g.gadgets = {
+            {"ENERGY", Gadget::Kind::Meter,
+             [](const Board &board) {
+                 using namespace akatana;
+                 if (!Playing(board)) {
+                     return std::string();
+                 }
+                 const uint32_t most = Long(board, kBarTotal) - std::min(Long(board, kShips), Long(board, kBarTotal));
+                 return std::to_string(Long(board, kEnergy)) + " / " + std::to_string(most);
+             },
+             [](const Board &board, int &value, int &most) {
+                 using namespace akatana;
+                 most = static_cast<int>(Long(board, kBarTotal) - std::min(Long(board, kShips), Long(board, kBarTotal)));
+                 value = static_cast<int>(std::min<uint32_t>(Long(board, kEnergy), static_cast<uint32_t>(std::max(most, 0))));
+                 return Playing(board);
+             },
+             0xFF40FF80u},
+        };
+        g.score = [](const Board &board) -> long long { return Playing(board) ? Score(board) : -1; };
+        g.stage = [](const Board &board) { return Playing(board) ? static_cast<int>(std::min<uint32_t>(Long(board, akatana::kStage), 5)) : -1; };
+        return g;
     }();
     return game;
 }
