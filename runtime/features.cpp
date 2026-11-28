@@ -227,7 +227,7 @@ const std::vector<recomp::FeatureInfo> &AllFeatures() {
         }
         // (every game's: the speed, the controls and, where the game's facts have its score, the score by stage; and the
         // game's own, port/gadgets.h)
-        list.push_back({"gadgets", kTrainingPage, "Gadgets",
+        list.push_back({"gadgets", kGadgetsPage, "Gadgets",
                         "Panels in the space beside the picture: what "
                         "the game keeps and does not show, read from its memory as it plays (its own: " +
                             std::string(ThisGame().gadgets.empty() ? "none yet" : GadgetTitles()) +

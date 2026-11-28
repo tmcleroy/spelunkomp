@@ -35,6 +35,8 @@ struct HitBox {
 // The menu's page of modes (every game's: the training tools' page is under it, and a game's other modes' pages), and
 // the training tools' page (the features' category)
 constexpr const char *kModesPage = "Alternative modes", *kTrainingPage = "Training mode";
+// The gadgets' page, under the Game page (the feature's category): for play of every kind, not only training
+constexpr const char *kGadgetsPage = "Gadgets";
 
 // (Game::unseen's bits besides player 1's controls: player 1's Start and a coin, held that frame)
 constexpr int kUnseenStart = 1 << 16, kUnseenCoin = 1 << 17;

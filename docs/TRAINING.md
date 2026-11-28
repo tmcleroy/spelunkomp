@@ -234,7 +234,7 @@ reads each one's value now ("" hides it).
 
 ## Gadgets (runtime/game.h: Game::gadgets; port/gadgets.h)
 
-The feature "Gadgets" (Training mode page, every game): framed panels in the space a stood-up picture leaves
+The feature "Gadgets" (the Gadgets page under Game, every game: for any play, not only training): framed panels in the space a stood-up picture leaves
 at its sides in a wide window.
 Drawn on a picture of their own a whole fraction of the window's size (about 360 lines, so each of its dots is a few
 of the window's pixels, sharp), laid over the window as the touch controls' layer is (those, while they show, come
