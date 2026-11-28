@@ -55,4 +55,22 @@ constexpr uint32_t kShipBoxes = 0x0C47C388u;
 constexpr uint32_t kCharacter = 0xB4, kTurned = 0x198;
 constexpr int kOutOfHarmReach = 24;
 
+// --- What the gadgets read (port/gadgets.h; found 2026-11-28 by dumps of headless play: Deathsmiles' places, deathsml.h,
+// at this version's) ---
+// The list of places (kGame + 0xD08, 8 bytes a stage: the place, then the level chosen for it: 1, 2, 3, and 4 for
+// level 999; the map's four levels chosen for a first stage held 1 to 4 there) and the stages played before this one
+// (kGame + 0x5C, the new-game routine's r5)
+constexpr uint32_t kGame = 0x0C660A18u;
+constexpr uint32_t kStages = kGame + 0xD08, kStagesPlayed = kGame + 0x5C;
+constexpr int kStageEntry = 8, kStageCount = 9, kLevelHighest = 3;
+constexpr const char *kPlaceNames[] = {"PORT", "GRAVEYARD", "FOREST", "LAKE", "RUINS", "CAVERN", "CASTLE", "CANYON", "CASTLE"};
+constexpr const char *kLevelNames[] = {"", "1", "2", "3", "999"};
+// 1 while a game is played (32 bits, kGame + 0x4C: 1 through the map and the stage of games here, 0 through the logos,
+// the title and the attract show's demonstration, whose ship is flown too. Not seen after a game's end)
+constexpr uint32_t kGameOn = kGame + 0x4C;
+// Player 1's score (ten bytes at kPlayer + 0x38, a digit each, the lowest first: 0, 6, 4, 2, 4 in a dump as the picture
+// showed 42,460)
+constexpr uint32_t kScore = kPlayer + 0x38;
+constexpr bool kScoreDigits = true;
+
 } // namespace spelunk::dsmbl

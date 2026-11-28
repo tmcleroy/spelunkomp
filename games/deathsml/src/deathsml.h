@@ -82,4 +82,21 @@ constexpr int kOutOfHarmReach = 24;
 // A): a byte each, 1 when unlocked. Kept in RAM only: a code is for the board's power on, never written to the EEPROM
 constexpr uint32_t kFollettUnlocked = 0x0C38861Cu, kRosaUnlocked = 0x0C38861Du, kCanyonUnlocked = 0x0C38861Eu;
 
+// --- What the gadgets read (port/gadgets.h; found 2026-11-28 by dumps of headless play) ---
+// The list of places above (kGame + 0xAD8, 8 bytes a stage: the place, then the level chosen for it, 1 to 3: a game
+// with the map's level 1, 2 and 3 chosen for its first stage held 1, 2 and 3 there), and the stages played before
+// this one (32 bits at kGame + 0x58: the new-game routine's r5; a stage's end seen to add one was not played here)
+constexpr uint32_t kStages = kGame + 0xAD8, kStagesPlayed = kGame + 0x58;
+constexpr int kStageEntry = 8, kStageCount = 9, kLevelHighest = 3;
+// (the places' names, by number, and each level's as the map shows it)
+constexpr const char *kPlaceNames[] = {"PORT", "GRAVEYARD", "FOREST", "LAKE", "RUINS", "CAVERN", "CASTLE", "CASTLE"};
+constexpr const char *kLevelNames[] = {"", "1", "2", "3"};
+// 1 while a game is played (32 bits, kGame + 0x48: 1 through the map and the stages of a game played here, 0 through
+// the logos, the title and the attract show's demonstration, whose ship is flown too; found by dumps of each. Not
+// seen after a game's end)
+constexpr uint32_t kGameOn = kGame + 0x48;
+// Player 1's score (32 bits, kPlayer + 0x2C: 72,300 in a dump as the picture showed it)
+constexpr uint32_t kScore = kPlayer + 0x2C;
+constexpr bool kScoreDigits = false;
+
 } // namespace spelunk::deathsml

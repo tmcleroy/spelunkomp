@@ -2,11 +2,15 @@
 // Copyright (C) 2026 Tommy McLeroy. Part of spelunkomp.
 // Deathsmiles: the game's own features (free play and the training features, from its facts: runtime/shmup.h).
 #include <algorithm>
+#include <iterator>
+#include <string>
 
 #include "../../../runtime/shmup.h"
 #include "deathsml.h"
 
 namespace spelunk {
+
+namespace NSD = deathsml;
 
 namespace {
     uint32_t Long(const Board &board, uint32_t address) {
@@ -112,6 +116,25 @@ namespace {
             Box(x, y, right, left, up, down, HitBox::Ship, out);
         });
     }
+    // While a game is played (deathsml.h's kGameOn)
+    bool Playing(const Board &board) {
+        return Long(board, deathsml::kGameOn) == 1;
+    }
+    // Player 1's score (32 bits, or ten digits, the lowest first)
+    long long Score(const Board &board) {
+        if (!NSD::kScoreDigits) {
+            return static_cast<long long>(Long(board, NSD::kScore));
+        }
+        long long n = 0;
+        for (int i = 9; i >= 0; i--) {
+            n = n * 10 + board.ram[(NSD::kScore + static_cast<uint32_t>(i)) & (SH3::kRamSize - 1)] % 10;
+        }
+        return n;
+    }
+    // The stage now, from 0 (the stages played before it)
+    int StageNow(const Board &board) {
+        return static_cast<int>(std::min<uint32_t>(Long(board, deathsml::kStagesPlayed), deathsml::kStageCount - 1));
+    }
 } // namespace
 
 const Game &ThisGame() {
@@ -134,7 +157,33 @@ const Game &ThisGame() {
         f.hitKinds |= 1u << HitBox::Ground | 1u << HitBox::Shot;
         f.unlocks = {{deathsml::kFollettUnlocked}, {deathsml::kRosaUnlocked}, {deathsml::kCanyonUnlocked}};
         f.unlockWords = "follett, Rosa and the canyon's extra stage";
-        return shmup::MakeGame(deathsml::kCredits, f);
+        Game g = shmup::MakeGame(deathsml::kCredits, f);
+        // (the gadgets, port/gadgets.h: the level chosen for each stage so far, and how many at the highest; and the
+        // score and stage, for the score by stage)
+        g.gadgets = {
+            {"LEVELS", Gadget::Kind::Words, [](const Board &board) {
+                 using namespace deathsml;
+                 if (!Playing(board)) {
+                     return std::string();
+                 }
+                 std::string lines;
+                 int highest = 0;
+                 const int now = StageNow(board);
+                 for (int n = 0; n <= now; n++) {
+                     const uint32_t at = kStages + static_cast<uint32_t>(n * kStageEntry);
+                     const uint32_t place = Long(board, at), level = Long(board, at + 4);
+                     highest += level >= static_cast<uint32_t>(kLevelHighest);
+                     const std::string name = place < std::size(kPlaceNames) ? kPlaceNames[place] : "PLACE " + std::to_string(place + 1);
+                     const std::string lv = level < std::size(kLevelNames) ? kLevelNames[level] : std::to_string(level);
+                     lines += (n == now ? ">" : " ") + std::to_string(n + 1) + " " + name + " LV" + lv + "\n";
+                 }
+                 return lines + "LV" + std::to_string(kLevelHighest) + (std::size(kLevelNames) > 4 ? "+" : "") + " STAGES " +
+                        std::to_string(highest);
+             }},
+        };
+        g.score = [](const Board &board) -> long long { return Playing(board) ? Score(board) : -1; };
+        g.stage = [](const Board &board) { return Playing(board) ? StageNow(board) : -1; };
+        return g;
     }();
     return game;
 }

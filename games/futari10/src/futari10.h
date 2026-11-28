@@ -84,4 +84,23 @@ constexpr uint32_t kSafeReach = 0, kShipSizes = 0, kShipType = 0, kSizesAt = 0, 
 // writes back to the EEPROM as a game is played (so held at 1, the board keeps Ultra unlocked from then on, as after the code)
 constexpr uint32_t kUltraUnlocked = 0x0C707CAFu;
 
+// --- What the gadgets read (port/gadgets.h; found 2026-11-28 by dumps of headless play and the game's code) ---
+// The game's rank (32 bits): made again each frame by 0x0C06C240 as the larger of the two players' parts (32 bits
+// each, made by 0x0C06C300: 4 x the bombs held plus 2 x the record's byte after them), plus the frames played over
+// 512 (kRankFrames, one more each frame), plus the mode's base (kRankBase), then cut to the mode's most
+// (208 in Original, 240 there when 0x0C068CF0 says so, which adds 32 first; 232 in Maniac, 248 in Ultra, 255 there
+// from the 4th stage on). Found: Ver 1.5's routine (futari15.h) at this place, the same code; a dump at frame 4,000 of a game held
+// 38 = 24 + 12 + 1,191 frames over 512
+constexpr uint32_t kRank = 0x0C387DCCu;
+constexpr uint32_t kRankPart1 = 0x0C388CB0u, kRankPart2 = 0x0C388CB4u, kRankFrames = 0x0C387EBCu, kRankBase = 0x0C387EC0u;
+// The record the routine reads (0x0C387E90): 1 at +4 while a game is played (0 in the attract show's demonstration: a
+// dump of it held 0), the mode at +16 (0 Original, 1 Maniac, 2 the third) and the stage played at +20 (from 0: a game
+// begun at stage 3 held 2)
+constexpr uint32_t kGameOn = 0x0C387E94u, kMode = 0x0C387EA0u, kStage = 0x0C387EA4u;
+constexpr int kRankMost[] = {208, 232, 248};
+constexpr int kUltra = 2, kUltraLateStage = 3, kUltraLateMost = 255;
+// Player 1's score (32 bits: 13,828 in a dump as the picture showed it)
+constexpr uint32_t kScore = 0x0C3883F0u;
+constexpr bool kScoreDigits = false;
+
 } // namespace spelunk::futari10

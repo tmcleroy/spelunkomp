@@ -100,4 +100,17 @@ constexpr uint32_t kShikigami1 = 0x203B9A, kShikigami2 = 0x203F8A;
 constexpr int kShikigamiSize = 0x38, kShikigamiCount = 18;
 constexpr uint32_t kShikigamiOn = 0x200F66;
 
+// --- What the gadgets read (port/gadgets.h; found 2026-11-28 from the code that keeps each, checked in a RAM log of
+// headless play) ---
+// The rank (a byte, 0 to 63; the word at 2026EE is what the enemies' fire reads: 016A20, 0189D4, 01AFA6 and more),
+// made again by 00445C as the stage's byte of a table (its address in the long at 200FBC) + the stage + each player's
+// part (from 20265E, the ship's word at +0x1E and the stage: 004464 on) + the frames played over 1,024 (the long at
+// 2026F6), cut to 63. The game keeps a half and a quarter of it too (2026F1, 2026F3). Found: in a log of a game it
+// went 0, 1, 0, 1, 2 through the first stage, and 1, 2 in the attract show's demonstration; with the ship's word at
+// +0x1E below 2 (seen only with the out-of-harm count held by hand) its part is less than 0 and carries the byte to 63
+constexpr uint32_t kRank = 0x2026EF;
+constexpr int kRankMost = 63;
+// Player 1's score (a long in BCD: 9617 in the log as the picture showed 9617; 055018 adds to it, the new game clears it)
+constexpr uint32_t kScore1 = 0x2024A4;
+
 } // namespace spelunk::guwange

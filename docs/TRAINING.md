@@ -93,6 +93,7 @@ runtime/shmup.h makes the features from them:
 | Dangun Feveron | all five (stages 2 to 5, sent on as the ship select ends) |
 | ESP Ra.De. | start at stage (2 to 6: the stage order's pointer moved on), straight to the boss, out of harm, characters that never run out, and the guard barrier never runs out in place of bombs (button 3; its gauge, a word at +0x46 of the character's record, 0x102750, kept full at 0xFA0) |
 | Guwange | all five. A later stage (2-7) is begun through the game's own stage end (070E78, as a boss dying calls it), after stage 1's tally; the boss is the life bar's word 0x20249C. Lives are a ceiling (0x2026DE) and the life under it (0x2026DA), 0xC00 a ship; both are raised together (`Facts::shipsAlso`) |
+| Akai Katana | ENERGY (Phantom form's energy as a number, against the most it can be now: the bar's 8,000 less the life's ceiling); score by stage. Its picture is wide: the panels need a window wider than 16:9 |
 | DoDonPachi Dai-Ou-Jou, Black Label | all five (stages 2 to 5 begun from the new game task's own stage) |
 | Ketsui | all five, at all five stages. Stage 4 is one the game only ever begins from stage 3's end (begun from a new game its scroll stands still and the picture stays black), so a game begun there is sent on into it as stage 3's end sends it (`Facts::sendOnStages` / `sendOn`): once the scroll task has had its first run, its speed, standing place and timer are set as stage 3's end leaves them, and the game's own timer begins the stage (0CCE86: 0C98CA, then 0CADE6), the scroll running in as from stage 3 while the ship is brought in. Tried: the stage's scenery and enemies against the same stage reached by play, and played on through its boss to stage 5; the trip to each stage's boss (all five arrive: 6,907, 8,104, 10,400, 12,373 and 23,671 frames of the board on the way); Begin at the stage at stage 4 |
 | Espgaluda | all five (the guard barrier's gauge kept full stands for the bombs; a later stage is reached through the game's own stage end, with its tally). Also the gems kept full (a word at 80EF04, 500 the most: Kakusei for as long as wanted) |
@@ -240,12 +241,15 @@ of the window's pixels, sharp), laid over the window as the touch controls' laye
 first: they want the same sides). Read from the board after each frame shown, never written to it: the game runs the
 same frames with them on, online too (they are each player's own).
 
-Every game has the toolkit's: CONTROLS (the stick and buttons held) and, where its facts give player 1's score and the
-stage (Game::score, Game::stage), SCORE BY STAGE (what each stage made, the stage now marked, and the total; begun
-again when the score goes down, a new game). A game with scoring readouts and no gadgets of its own shows them as one
-panel, COUNTERS. A game's own are Words (lines), a Meter (a bar, with words over it) or a Graph (the value kept every
-8 frames over the last half minute, the rank graph). A side too narrow for a panel (84 of its dots) gives its gadgets
-to the other; none are drawn when neither has room (the picture across the window: As the cabinet, or a tall window).
+Every game has the toolkit's: CONTROLS (the stick and buttons held), SPEED (the game's speed as a graph: the Speed
+readout's number, the share of the last 60 refreshes the board gave a new picture in, so where it slows down shows as
+a dip; docs/plans/GADGETS-RESEARCH.md says why it is that and not the CPU's load) and, where its facts give player 1's
+score and the stage (Game::score, Game::stage), SCORE BY STAGE (what each stage made, the stage now marked, and the
+total; begun again when the score goes down, a new game). A game with scoring readouts and no gadgets of its own shows
+them as one panel, COUNTERS. A game's own are Words (lines), a Meter (a bar, with words over it) or a Graph (the value
+kept every 8 frames over the last half minute, the rank graph). A side too narrow for a panel (84 of its dots) gives
+its gadgets to the other; none are drawn when neither has room (the picture across the window: As the cabinet, or a
+tall window).
 
 | Game | Its own gadgets |
 | --- | --- |
@@ -256,8 +260,16 @@ to the other; none are drawn when neither has room (the picture across the windo
 | Muchi Muchi Pork! | RANK (a graph), LARD, NEXT MEDAL, BOSS (the life of the part that counts, and the phase). From wnka's MAME layout, its places checked here |
 | Pink Sweets | RANK (a graph), ZAN, NEXT DROPS (the round of eight, and the shot and option power-ups dropped), NEXT MEDAL, BOSS (life and phase). From Olifante's MAME layout, its places checked here |
 | Ibara | RANK (a graph), NEXT DROPS (the round of 25), NEXT MEDAL. From the MAME layout linked from epozzobon.it/re (its places for this set's later program), checked here |
+| ESP Ra.De. | SCORE ITEMS (the counter under the lives, how far it goes before it is full, 200 then 100 more each time, and FULL while it is), MULTIPLIER (the power shot's, and the frames it lasts), BARRIER (the gauge as a share); score by stage |
+| Espgaluda | KAKUSEI (the bullet multiplier, to 100), OVERMODE (its level, 1 to 4, and the way to the next), GOLD (the count, to 1,000, and the step it is on, one more each 100); score by stage |
+| Espgaluda II | OVER LEVEL (Overmode's level, 0 to 3, kept when a ship is lost, and its way to the next in Overmode: 250 frames), GOLD (to 1,000); score by stage |
+| Mushihimesama Futari (every set) | RANK (a graph, to the mode's most), RANK FROM (what it is made of: the mode's base, the ship's part from the bombs held, the time played); score by stage. The rank's routine read from the game's code in each set |
+| Dangun Feveron | RANK (0 to 63, the byte the bullets' speed reads, a graph; 63 through the second round), CYBORGS TO 1UP (the cyborgs taken this game, the extend at 2,000); score by stage, 1-1 to 2-5 |
+| DonPachi (both sets) | RANK (0 to 63, the byte the enemies' fire reads, made again as each part of a stage begins, a graph); score by stage, 1-1 to 2-5 |
+| Deathsmiles, MegaBlack Label | LEVELS (each stage so far, its place and the level chosen for it on the map, and how many were played at level 3 or above); score by stage. Its picture is wide: the panels need a window wider than 16:9 |
+| Guwange | RANK (0 to 63, the byte the enemies' fire reads, a graph); score by stage |
 
 ## Not yet
 
-The other games' scoring readouts (rank, Mushihimesama's counter, Espgaluda II's gems, gold and kakusei gauge,
-Futari's counter and multiplier: none found yet), score attack and the other modes (ROADMAP.md).
+The other games' scoring readouts (Mushihimesama's rank, Espgaluda II's Kakusei multiplier, Futari's counters and
+multiplier: none found yet), the gadgets of DoDonPachi II, Akai Katana's katana parts, Deathsmiles' item counter and Death Mode (docs/plans/GADGETS-RESEARCH.md: what the official ports show), score attack and the other modes (ROADMAP.md).

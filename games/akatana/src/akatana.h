@@ -81,4 +81,15 @@ constexpr uint8_t kNotShot = 0x80, kNotShotByKind4 = 0x02;
 // middle; the ship, kept in the middle, did not show it)
 constexpr int kPictureHeight = 240;
 
+// --- What the gadgets read (port/gadgets.h; found 2026-11-28 by RAM logs of headless play) ---
+// 1 while a game is played (32 bits, the stage manager + 0x54: 1 all through a game played here, 0 through the logos,
+// the title and the attract show's demonstration; found by RAM logs of both. kShipState above stayed 0 through that
+// game, played out of harm)
+constexpr uint32_t kGameOn = 0x0C7E6740u;
+// The stage being played, from 0 (32 bits: the stage manager's number above)
+constexpr uint32_t kStage = 0x0C7E674Cu;
+// Player 1's score (ten bytes at kRecord + 0x84, a digit each, the lowest first: 0, 7, 7, 3, 0, 1 in a dump as the
+// picture showed 103,770)
+constexpr uint32_t kScore = kRecord + 0x84;
+
 } // namespace spelunk::akatana

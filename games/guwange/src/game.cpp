@@ -4,6 +4,9 @@
 #include "../../../runtime/shmup.h"
 #include "guwange.h"
 
+#include <algorithm>
+#include <string>
+
 namespace spelunk {
 
 namespace {
@@ -13,6 +16,19 @@ namespace {
     }
     uint8_t Byte(const Board &board, uint32_t address) {
         return board.ram[address & 0xFFFF];
+    }
+    // While a player's game is played (the mode word's 7: the attract show's demonstration has another, a continue 8)
+    bool Playing(const Board &board) {
+        return Word(board, guwange::kMode) == guwange::kModePlay;
+    }
+    // Player 1's score in points (BCD)
+    long long Score(const Board &board) {
+        const uint32_t bcd = static_cast<uint32_t>(Word(board, guwange::kScore1)) << 16 | static_cast<uint32_t>(Word(board, guwange::kScore1 + 2));
+        long long n = 0, scale = 1;
+        for (uint32_t b = bcd; b; b >>= 4, scale *= 10) {
+            n += (b & 15) * scale;
+        }
+        return n;
     }
     // The boxes the game's hit test (007D4C) uses, read as it reads them
     void HitBoxes(const Board &board, std::vector<HitBox> &out) {
@@ -118,7 +134,24 @@ const Game &ThisGame() {
         f.safeFramesBytes = 1;
         f.hitBoxes = HitBoxes;
         f.hitKinds |= 1u << HitBox::Ground | 1u << HitBox::Shot;
-        return shmup::MakeGame(guwange::kCredits, f);
+        Game g = shmup::MakeGame(guwange::kCredits, f);
+        // (the gadgets, port/gadgets.h: the rank over time; and the score and stage, for the score by stage)
+        using Kind = Gadget::Kind;
+        g.gadgets = {
+            {"RANK", Kind::Graph,
+             [](const Board &board) {
+                 return Playing(board) ? std::to_string(board.ram[guwange::kRank & 0xFFFF]) + " / 63" : std::string();
+             },
+             [](const Board &board, int &value, int &most) {
+                 value = std::min<int>(board.ram[guwange::kRank & 0xFFFF], guwange::kRankMost);
+                 most = guwange::kRankMost;
+                 return Playing(board);
+             },
+             0xFF4070FFu},
+        };
+        g.score = [](const Board &board) -> long long { return Playing(board) ? Score(board) : -1; };
+        g.stage = [](const Board &board) { return Playing(board) ? std::min(Word(board, guwange::kStage), 6) : -1; };
+        return g;
     }();
     return game;
 }

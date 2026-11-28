@@ -2,6 +2,7 @@
 // Copyright (C) 2026 Tommy McLeroy. Part of spelunkomp.
 // Espgaluda II: the game's own features (free play and the training features, from its facts: runtime/shmup.h).
 #include <algorithm>
+#include <string>
 
 #include "../../../runtime/shmup.h"
 #include "espgal2.h"
@@ -18,6 +19,14 @@ namespace {
         return static_cast<int16_t>(p[0] << 8 | p[1]);
     }
     // Each member of a kind's groups that the game tests (the group's word at +8, the member's at +8 and +10)
+    // While a player's game is played (espgal2.h's kGameOn)
+    bool Playing(const Board &board) {
+        return Long(board, espgal2::kGameOn) == 1 && board.ram[espgal2::kShipRecord & (SH3::kRamSize - 1)] != 0;
+    }
+    bool Overmode(const Board &board) {
+        using namespace espgal2;
+        return Playing(board) && board.ram[kKakusei & (SH3::kRamSize - 1)] && Long(board, kGems) == 0;
+    }
     template <typename Fn>
     void Members(const Board &board, uint32_t kind, bool needTen, Fn &&fn) {
         int guard = 0;
@@ -93,7 +102,44 @@ const Game &ThisGame() {
         f.hitBoxes = HitBoxes;
         f.hitKinds |= 1u << HitBox::Ground | 1u << HitBox::Shot;
         f.safeFramesHeld = 0xDA;
-        return shmup::MakeGame(espgal2::kCredits, f);
+        Game g = shmup::MakeGame(espgal2::kCredits, f);
+        // (the gadgets, port/gadgets.h: Overmode's level and its way to the next, the gold; and the score and stage, for
+        // the score by stage)
+        using Kind = Gadget::Kind;
+        g.gadgets = {
+            {"OVER LEVEL", Kind::Meter,
+             [](const Board &board) {
+                 using namespace espgal2;
+                 if (!Playing(board)) {
+                     return std::string();
+                 }
+                 return std::to_string(std::clamp(Word(board, kOverLevel), 0, kOverLevels)) + " / " + std::to_string(kOverLevels) +
+                        (Overmode(board) ? "  OVERMODE" : "");
+             },
+             [](const Board &board, int &value, int &most) {
+                 using namespace espgal2;
+                 most = kOverWayNext;
+                 // (the way to the next while in Overmode, the task being player 1's; full at the last level)
+                 const bool mine = Long(board, kShipTask + kTaskRecord) == kShipRecord;
+                 value = Word(board, kOverLevel) >= kOverLevels ? most : Overmode(board) && mine ? Word(board, kShipTask + kOverWay) : 0;
+                 return Playing(board);
+             },
+             0xFFFF6040u},
+            {"GOLD", Kind::Meter,
+             [](const Board &board) {
+                 return Playing(board) ? std::to_string(Word(board, espgal2::kGold)) + " / " + std::to_string(espgal2::kGoldMost) : std::string();
+             },
+             [](const Board &board, int &value, int &most) {
+                 value = Word(board, espgal2::kGold);
+                 most = espgal2::kGoldMost;
+                 return Playing(board);
+             },
+             0xFF40D0FFu},
+        };
+        g.score = [](const Board &board) -> long long { return Playing(board) ? static_cast<long long>(Long(board, espgal2::kScore)) : -1; };
+        g.stage = [](const Board &board) { return Playing(board) ? static_cast<int>(std::min<uint32_t>(Long(board, espgal2::kStage), 5)) : -1; };
+        g.stageNames = f.stages;
+        return g;
     }();
     return game;
 }

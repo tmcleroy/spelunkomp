@@ -90,4 +90,18 @@ constexpr uint32_t kOptions1 = 0x102D1A, kOptions2 = 0x10303A;
 // from the word at +4
 constexpr uint32_t kLaser1 = 0x10371A, kLaser2 = 0x10373A;
 
+// --- What the gadgets read (port/gadgets.h; found 2026-11-28 from the code that keeps each, checked in RAM logs of
+// headless play) ---
+// The rank (a byte, 0 to 63: what the enemies' fire reads), made again as each part of a stage begins (02DAE2 on in
+// the World set) as the stage's byte of a table (its address in the long at 10121E) + the stage + each ship's part
+// (twice its word at 102178 plus the next, and an eighth of its count at 101754 past 20; player 2's at 1021B8 and
+// 101772; half the two players' sum when both play) + 16 x the loop + the ships at 101A2F and 101A31 + the bytes at
+// 10379B and 10379F + the frames played over 2,048 (the long at 101A38), cut to 63. Found: 13, 16, 20 in a RAM log of a game, each the sum of
+// those parts at that frame
+constexpr uint32_t kRank = 0x101A33;
+constexpr int kRankMost = 63;
+// Player 1's score (a long in BCD: 84,850 and 193,480 in the log as the picture showed them; the new game's routine
+// sets it, and a continue leaves only its last digit, the continues)
+constexpr uint32_t kScore1 = 0x10177A;
+
 } // namespace spelunk::donpachi

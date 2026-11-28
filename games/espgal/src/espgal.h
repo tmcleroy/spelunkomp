@@ -109,4 +109,28 @@ constexpr int kAwakeLasers = 5, kAwakeLaserSize = 0x1A;
 constexpr int kShipLaserOn = 0x40, kShipAwake = 0x5F;
 constexpr int kLaserLength = 6, kLaserBack = 8, kLaserDown = 8, kLaserUp = 0xA, kLaserEnd = 0x10, kAwakeMoved = 2;
 
+// --- What the gadgets read (port/gadgets.h; found 2026-11-28 from the code that keeps each, checked against RAM logs
+// of headless play) ---
+// 1 while the attract show's demonstration plays (13F39A sets it as the demonstration's game task is made; a real
+// game's start clears it, 13F7B4)
+constexpr uint32_t kDemo = 0x801186;
+// Player 1's score (a long, tens: the last digit shown is always 0. Found: 3,978 and 5,419 in the log as the picture
+// showed 39,780 and 54,190; 178F32 reads it)
+constexpr uint32_t kScore1 = 0x81B57E;
+// Player 1's gold (a word, the number beside the ingot: 1,000 at most, 137C5E; halved when a ship is lost, 137AFE, and
+// a quarter taken as a boss comes, 137B6E. Found: 24, 16, 4 in the log as the picture showed them), the step it is on
+// (a word, 4 x the step, 0 to 0x24: one more each 100, 137CB6) and the gold into that step (a word, 0 to 100). Player 2's
+// are the words after each (81293C, 812940, 812944)
+constexpr uint32_t kGold = 0x81293A, kGoldStep = 0x81293E, kGoldIntoStep = 0x812942;
+constexpr int kGoldMost = 1000;
+// In the ship's record: Kakusei on (a word, not 0: +0x66); with no gems left in it, Kakusei Overmode. The bullets a
+// Kakusei has turned into gold so far (a word, +0x8A: 10 more for each, 170658, to 1,000; each bullet takes the value
+// before its own, so the multiplier is a tenth of it plus one, 1 to 100; cleared as Kakusei begins, 122AE8, and as the
+// gems run out, 1252C2). Overmode's level (a word, +0x76: 0, 2, 4, 6 for the levels 1 to 4) and its way to the next
+// (a word, +0x74, against +0x7A: 1 a frame while shooting, 4 a frame after 64 frames without, 125302 on; at 999 the
+// level goes up. Found: in Overmode without shooting the log showed +0x74 go up 0x3C every 15 frames and the level 0,
+// 2, 4 each time it passed 999)
+constexpr int kShipKakusei = 0x66, kShipCancels = 0x8A, kShipOverLevel = 0x76, kShipOverWay = 0x74, kShipOverNext = 0x7A;
+constexpr int kOverLevels = 4;
+
 } // namespace spelunk::espgal

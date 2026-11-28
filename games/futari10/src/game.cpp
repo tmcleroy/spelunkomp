@@ -2,6 +2,8 @@
 // Copyright (C) 2026 Tommy McLeroy. Part of spelunkomp.
 // Mushihimesama Futari Ver 1.0: the game's own features (free play and the training features, from its facts: runtime/shmup.h).
 #include <algorithm>
+#include <iterator>
+#include <string>
 
 #include "../../../runtime/shmup.h"
 #include "futari10.h"
@@ -141,6 +143,30 @@ namespace {
             Members(board, NS::kShipKindAll + player, [&](uint32_t m) { Box(board, m, HitBox::Ship, out); });
         }
     }
+    // While a player's game is played (the rank's record says so: NS::kGameOn)
+    bool Playing(const Board &board) {
+        return Long(board, NS::kGameOn) == 1;
+    }
+    // Player 1's score (32 bits, or Black Label's ten digits, the lowest first)
+    long long Score(const Board &board) {
+        if (!NS::kScoreDigits) {
+            return static_cast<long long>(Long(board, NS::kScore));
+        }
+        long long n = 0;
+        for (int i = 9; i >= 0; i--) {
+            n = n * 10 + board.ram[(NS::kScore + static_cast<uint32_t>(i)) & (SH3::kRamSize - 1)] % 10;
+        }
+        return n;
+    }
+    // The most the rank goes to now (the mode's, as the rank's routine cuts it)
+    int RankMost(const Board &board) {
+        const uint32_t mode = Long(board, NS::kMode);
+        if (mode >= std::size(NS::kRankMost)) {
+            return 255;
+        }
+        return static_cast<int>(mode) == NS::kUltra && Long(board, NS::kStage) >= static_cast<uint32_t>(NS::kUltraLateStage) ? NS::kUltraLateMost
+                                                                                                                      : NS::kRankMost[mode];
+    }
 } // namespace
 
 const Game &ThisGame() {
@@ -158,7 +184,37 @@ const Game &ThisGame() {
         f.hitKinds |= 1u << HitBox::Ground | 1u << HitBox::Shot;
         f.unlocks = {{futari10::kUltraUnlocked}};
         f.unlockWords = "Ultra mode";
-        return shmup::MakeGame(futari10::kCredits, f);
+        Game g = shmup::MakeGame(futari10::kCredits, f);
+        // (the gadgets, port/gadgets.h: the rank over time, with what it is made of; and the score and stage, for the
+        // score by stage)
+        using Kind = Gadget::Kind;
+        g.gadgets = {
+            {"RANK", Kind::Graph,
+             [](const Board &board) {
+                 return Playing(board) ? std::to_string(Long(board, NS::kRank)) + " / " + std::to_string(RankMost(board)) : std::string();
+             },
+             [](const Board &board, int &value, int &most) {
+                 most = RankMost(board);
+                 value = static_cast<int>(std::min<uint32_t>(Long(board, NS::kRank), static_cast<uint32_t>(most)));
+                 return Playing(board);
+             },
+             0xFF4070FFu},
+            // (what the rank is made of: the mode's base, the ship's part, the time played)
+            {"RANK FROM", Kind::Words, [](const Board &board) {
+                 if (!Playing(board)) {
+                     return std::string();
+                 }
+                 const uint32_t ship = std::max(Long(board, NS::kRankPart1), Long(board, NS::kRankPart2));
+                 return "BASE " + std::to_string(Long(board, NS::kRankBase)) + "  SHIP " + std::to_string(ship) + "\nTIME " +
+                        std::to_string(Long(board, NS::kRankFrames) >> 9);
+             }},
+        };
+        g.score = [](const Board &board) -> long long { return Playing(board) ? Score(board) : -1; };
+        g.stage = [](const Board &board) {
+            return Playing(board) ? static_cast<int>(std::min<uint32_t>(Long(board, NS::kStage), 4)) : -1;
+        };
+        g.stageNames = f.stages;
+        return g;
     }();
     return game;
 }

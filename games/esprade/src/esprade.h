@@ -97,4 +97,23 @@ constexpr int kShotSize = 0x30, kShotCount = 40;
 constexpr uint32_t kLaser1 = 0x1037EA, kLaser2 = 0x10384C;
 constexpr int kLaserSize = 0xE, kLaserCount = 7;
 
+// --- What the gadgets read (port/gadgets.h; found 2026-11-28 from the code that keeps each, checked against RAM logs
+// of headless play) ---
+// Player 1's score (a long in BCD, tens: the last digit shown is always 0; player 2's follows at +4. Found: 523 and
+// 6,436 in the log as the picture showed 5,230 and 64,360; the stage's tally and the extends read it: 005332)
+constexpr uint32_t kScore1 = 0x1022E4;
+// Player 1's score item counter, the number under the lives (a word: added to by each score item taken, 04AB8C; drawn
+// by 04F79C. Found: 123 written there drew 123), and the most it goes to before the counter is full (a word: 200 at a
+// game's beginning, 001C26, 100 more each time a full counter has run out, 0009CA)
+constexpr uint32_t kItems = 0x1026F8, kItemsMost = 0x102704;
+// While the counter is full (a word, not 0: set to the most as the counter fills, 04ABA2; then it and the counter go
+// down by one for each energy item it pays for while the barrier's gauge is short of full, 0009D2, and the counter
+// begins again at 0 when the gauge is full, 04B17A)
+constexpr uint32_t kItemsFull = 0x1038AE;
+// Player 1's multiplier: the time it lasts (a word, frames, counted down each frame, every 4th with the laser out, every
+// 16th while 10376A is set: 000AA4; set to at least 70 by a hit with the power shot's bubbles on, 041FA6) and the
+// multiplier less one (a word: the bubbles on the enemy that began it, 0 to 15, the score added that many times more:
+// 042038). Found: 70 counted down to 0 a frame at a time in the log, with 1, 2, 3 and 7 as the multiplier
+constexpr uint32_t kMultiplierTime = 0x1026FC, kMultiplier = 0x1026FE;
+
 } // namespace spelunk::esprade
