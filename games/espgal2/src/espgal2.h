@@ -62,4 +62,32 @@ constexpr int kHurtKinds[] = {0, 1};
 constexpr int kShotKinds[] = {6, 7, 12, 13};
 constexpr int kShotKindsTen[] = {4, 5, 8, 9};
 
+// --- What the gadgets read (port/gadgets.h; found 2026-11-28 by RAM logs of headless play and the code that writes
+// each, SPELUNK_WATCH and SPELUNK_BREAK on the interpreter) ---
+// 1 from Start in a real game until the title after it (32 bits; 0 through the attract show and its demonstration:
+// found by RAM logs of the attract show, a game played to its end and the title after it), with the first byte of
+// player 1's record (kShipRecord: 1 while a game's ship is in it, 0 from the game's end and through the logos). (The
+// 32 bits at 0x0C37D390, which the new game's routine sets, go back to 0 at the same frame in two games, about 2,250
+// frames after Start, and kShipState above goes 1, 2, 3 as ships are lost, staying 0 in a game played out of harm)
+constexpr uint32_t kGameOn = 0x0C37D4E4u;
+// Player 1's score (32 bits at kScore: 80,962 in the log as the picture showed it). The stage being played (32 bits,
+// from 0: written by the routine that begins a stage, kBeginStage, from its r5, 0x0C066A08; a game begun at stage 3
+// and 5 held 2 and 4. A stage's end played through to the next was not seen)
+constexpr uint32_t kStage = 0x0C37D428u;
+// Kakusei on (a byte, the record + 0x0A: 1 from the press of button 2 to its end; found in the log, the gems going down
+// only while it is 1). With no gems left in it, Kakusei Overmode
+constexpr uint32_t kKakusei = 0x0C37D706u;
+// The gold (a word, the record + 0x74, the number under the gems: 25 in the log as the picture showed 25; the routine
+// that adds gold, 0x0C068C60, puts 1,000 there in place of any count above 999)
+constexpr uint32_t kGold = 0x0C37D770u;
+constexpr int kGoldMost = 1000;
+// Overmode's level (a word, the record + 0x84: 0 to 3, kept when a ship is lost; 0x0C068D00 adds one and stops at 3) and
+// the way to the next (a word, +0xC2 of player 1's ship task, which is at kShipTask throughout: 2 more each frame of
+// Overmode, 0x0C07E5E0, the level up past 499: 250 frames a level. Found: the level 0 to 1 at 249 frames into an
+// Overmode in the log, and the task's place, the same in two games begun at other times, by SPELUNK_BREAK there). The
+// task's word at +0x50 points to player 1's record (kShipRecord): read only while it does
+constexpr uint32_t kOverLevel = 0x0C37D780u;
+constexpr uint32_t kShipTask = 0x0C3F9374u, kShipRecord = 0x0C37D6FCu;
+constexpr int kOverWay = 0xC2, kOverWayNext = 500, kTaskRecord = 0x50, kOverLevels = 3;
+
 } // namespace spelunk::espgal2
