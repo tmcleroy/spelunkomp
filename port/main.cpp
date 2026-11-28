@@ -3437,7 +3437,7 @@ int main(int argc, char **argv) {
             if (const size_t at = FeatureIndex("gadgets"); at < features.size() && features[at]) {
                 int ow = 0, oh = 0;
                 SDL_GetWindowSizeInPixels(window, &ow, &oh);
-                if (gadgets.Frame(ThisGame(), *board, board->inputs[0], place(), ow, oh)) {
+                if (gadgets.Frame(ThisGame(), *board, board->inputs[0], static_cast<int>((60 - lateFrames) * 100 / 60), place(), ow, oh)) {
                     gadgetsStale = true;
                 }
             } else if (gadgets.Off()) {

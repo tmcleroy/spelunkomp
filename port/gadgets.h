@@ -29,9 +29,10 @@ public:
 
     // This frame's panels, for a window of ow x oh pixels with the picture at `picture` (its pixels too). (Whether a
     // game is played is each gadget's own: its words empty, its level false, the score -1 otherwise.) `inputs`:
-    // player 1's controls held (machine/cv1000.h's kIn bits). True if the picture differs from the last (to be handed
-    // on again); none to show: pixels empty
-    bool Frame(const spelunk::Game &game, const spelunk::Board &board, uint32_t inputs, const SDL_FRect &picture, int ow,
+    // player 1's controls held (machine/cv1000.h's kIn bits). `speed`: the game's speed over the last second, as the
+    // Speed readout has it (the share of the last 60 refreshes the board gave a new picture in, 0 to 100). True if the
+    // picture differs from the last (to be handed on again); none to show: pixels empty
+    bool Frame(const spelunk::Game &game, const spelunk::Board &board, uint32_t inputs, int speed, const SDL_FRect &picture, int ow,
                int oh) {
         m_words.clear();
         m_frame++;
@@ -107,6 +108,25 @@ public:
             m_items.push_back(std::move(item));
         }
         {
+            // (the game's speed, as a graph: where it slows down)
+            Item item;
+            item.title = "SPEED";
+            item.kind = spelunk::Gadget::Kind::Graph;
+            item.value = std::clamp(speed, 0, 100);
+            item.most = 100;
+            item.words = std::to_string(item.value) + "%";
+            item.colour = 0xFF40FF80u;
+            item.right = true;
+            if (m_frame % kGraphEvery == 0) {
+                m_speedHistory.push_back(item.value / 100.0f);
+                if (m_speedHistory.size() > kGraphSamples) {
+                    m_speedHistory.erase(m_speedHistory.begin(), m_speedHistory.begin() + static_cast<long>(m_speedHistory.size() - kGraphSamples));
+                }
+            }
+            item.history = &m_speedHistory;
+            m_items.push_back(std::move(item));
+        }
+        {
             Item item;
             item.title = "CONTROLS";
             item.kind = kControls;
@@ -162,6 +182,7 @@ public:
     bool Off() {
         m_wordsBefore.clear();
         m_history.clear();
+        m_speedHistory.clear();
         m_entries.clear();
         m_scoreLines.clear();
         const bool had = !pixels.empty();
@@ -187,6 +208,7 @@ private:
     };
     std::vector<Item> m_items;
     std::vector<std::vector<float>> m_history;
+    std::vector<float> m_speedHistory;
     std::string m_words, m_wordsBefore;
     uint64_t m_frame = 0;
 

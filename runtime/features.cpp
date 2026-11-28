@@ -225,13 +225,13 @@ const std::vector<recomp::FeatureInfo> &AllFeatures() {
                                 (ThisGame().readoutsWhat ? ThisGame().readoutsWhat : "") + ".",
                             0, {"Off", "Left", "Right"}});
         }
-        // (every game's: the controls and, where the game's facts have its score, the score by stage; and the game's
-        // own, port/gadgets.h)
+        // (every game's: the speed, the controls and, where the game's facts have its score, the score by stage; and the
+        // game's own, port/gadgets.h)
         list.push_back({"gadgets", kTrainingPage, "Gadgets",
                         "Panels in the space beside the picture: what "
                         "the game keeps and does not show, read from its memory as it plays (its own: " +
                             std::string(ThisGame().gadgets.empty() ? "none yet" : GadgetTitles()) +
-                            "), the controls held" + (ThisGame().score ? ", the score each stage made" : "") +
+                            "), the game's speed, the controls held" + (ThisGame().score ? ", the score each stage made" : "") +
                             (ThisGame().readouts.empty() || !ThisGame().gadgets.empty() ? "" : ", the scoring readouts") +
                             ". None when the picture fills the window's width; never over the picture, and the game "
                             "runs as it does without them.",

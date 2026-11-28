@@ -240,12 +240,15 @@ of the window's pixels, sharp), laid over the window as the touch controls' laye
 first: they want the same sides). Read from the board after each frame shown, never written to it: the game runs the
 same frames with them on, online too (they are each player's own).
 
-Every game has the toolkit's: CONTROLS (the stick and buttons held) and, where its facts give player 1's score and the
-stage (Game::score, Game::stage), SCORE BY STAGE (what each stage made, the stage now marked, and the total; begun
-again when the score goes down, a new game). A game with scoring readouts and no gadgets of its own shows them as one
-panel, COUNTERS. A game's own are Words (lines), a Meter (a bar, with words over it) or a Graph (the value kept every
-8 frames over the last half minute, the rank graph). A side too narrow for a panel (84 of its dots) gives its gadgets
-to the other; none are drawn when neither has room (the picture across the window: As the cabinet, or a tall window).
+Every game has the toolkit's: CONTROLS (the stick and buttons held), SPEED (the game's speed as a graph: the Speed
+readout's number, the share of the last 60 refreshes the board gave a new picture in, so where it slows down shows as
+a dip; docs/plans/GADGETS-RESEARCH.md says why it is that and not the CPU's load) and, where its facts give player 1's
+score and the stage (Game::score, Game::stage), SCORE BY STAGE (what each stage made, the stage now marked, and the
+total; begun again when the score goes down, a new game). A game with scoring readouts and no gadgets of its own shows
+them as one panel, COUNTERS. A game's own are Words (lines), a Meter (a bar, with words over it) or a Graph (the value
+kept every 8 frames over the last half minute, the rank graph). A side too narrow for a panel (84 of its dots) gives
+its gadgets to the other; none are drawn when neither has room (the picture across the window: As the cabinet, or a
+tall window).
 
 | Game | Its own gadgets |
 | --- | --- |
@@ -256,8 +259,13 @@ to the other; none are drawn when neither has room (the picture across the windo
 | Muchi Muchi Pork! | RANK (a graph), LARD, NEXT MEDAL, BOSS (the life of the part that counts, and the phase). From wnka's MAME layout, its places checked here |
 | Pink Sweets | RANK (a graph), ZAN, NEXT DROPS (the round of eight, and the shot and option power-ups dropped), NEXT MEDAL, BOSS (life and phase). From Olifante's MAME layout, its places checked here |
 | Ibara | RANK (a graph), NEXT DROPS (the round of 25), NEXT MEDAL. From the MAME layout linked from epozzobon.it/re (its places for this set's later program), checked here |
+| ESP Ra.De. | SCORE ITEMS (the counter under the lives, how far it goes before it is full, 200 then 100 more each time, and FULL while it is), MULTIPLIER (the power shot's, and the frames it lasts), BARRIER (the gauge as a share); score by stage |
+| Espgaluda | KAKUSEI (the bullet multiplier, to 100), OVERMODE (its level, 1 to 4, and the way to the next), GOLD (the count, to 1,000, and the step it is on, one more each 100); score by stage |
+| Espgaluda II | OVER LEVEL (Overmode's level, 0 to 3, kept when a ship is lost, and its way to the next in Overmode: 250 frames), GOLD (to 1,000); score by stage |
+| Mushihimesama Futari (every set) | RANK (a graph, to the mode's most), RANK FROM (what it is made of: the mode's base, the ship's part from the bombs held, the time played); score by stage. The rank's routine read from the game's code in each set |
 
 ## Not yet
 
-The other games' scoring readouts (rank, Mushihimesama's counter, Espgaluda II's gems, gold and kakusei gauge,
-Futari's counter and multiplier: none found yet), score attack and the other modes (ROADMAP.md).
+The other games' scoring readouts (Mushihimesama's rank, Espgaluda II's Kakusei multiplier, Futari's counters and
+multiplier: none found yet), the gadgets of Deathsmiles, Akai Katana, DoDonPachi II, DonPachi, Dangun Feveron and
+Guwange (docs/plans/GADGETS-RESEARCH.md: what the official ports show), score attack and the other modes (ROADMAP.md).

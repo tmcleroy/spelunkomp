@@ -5,6 +5,13 @@ Versions follow [Semantic Versioning](https://semver.org/).
 
 ## Unreleased
 
+- **Gadgets in seven more games**: ESP Ra.De. (score items and how far the counter goes, the power shot's
+  multiplier and its time, the barrier), Espgaluda (Kakusei's multiplier, Overmode's level, gold and its step),
+  Espgaluda II (Overmode's level, gold) and every set of Mushihimesama Futari (the rank as a graph and what it is made
+  of), each with the score by stage. Read from the game's memory, never written: tools/check_gadgets.sh plays a game
+  with them on and off and finds every frame the same.
+- **SPEED**, a gadget every game has: the game's speed as a graph, so the slowdown shows where it comes.
+
 ## 0.6.0-beta.1
 
 Gadgets beside the picture in eight games, Dai-Ou-Jou Black Label's scoring readouts and hidden bees, and faster
