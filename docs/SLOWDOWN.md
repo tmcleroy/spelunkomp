@@ -88,7 +88,7 @@ depends on the code under it alone, each block of 128 bytes of RAM a kept path r
 (by the CPU or the DMA), and a state loaded forgets them all, so which paths are kept changes no count. Finding a
 kept path is mostly waiting on memory, so each is one 64-byte cache line, the two places a path can be kept side by
 side, a plan of more than two fetches or steps apart; with four times the paths of before, the headless runner from
-the boss runs 10.6% faster on a Steam Machine for SaiDaiOuJou, 8.6% for Muchi Muchi Pork, 9.2% for Akai Katana's
+the boss runs 11.8% faster on a Steam Machine for SaiDaiOuJou, 8.9% for Muchi Muchi Pork, 8.0% for Akai Katana's
 stage 1 (SPELUNK_MEMO_BITS=13 or 14 keeps 8,192 or 16,384).
 
 ## Checked against the board
