@@ -52,4 +52,23 @@ constexpr uint32_t kSafeReach = 0, kShipSizes = 0, kShipType = 0, kSizesAt = 0, 
 // unlocks Ultra). What it does was not played to: God mode's last boss
 constexpr uint32_t kLarsaUnlocked = 0x0C7042B3u;
 
+// --- What the gadgets read (port/gadgets.h; found 2026-11-28 by dumps of headless play and the game's code) ---
+// The game's rank (32 bits): made again each frame by 0x0C06CAB0 as the larger of the two players' parts (32 bits
+// each, made by 0x0C06CB50: 4 x the bombs held plus 2 x the record's byte after them), plus the frames played over
+// 512 (kRankFrames, one more each frame), plus the mode's base (kRankBase), then cut to the mode's most
+// (255 in Original, 232 in Maniac, 248 in God, 255 there from the 4th stage on: Black Label Another Ver's
+// code, futaribl.h). Found: Ver 1.5's routine (futari15.h) at this place, the same code as Black Label Another Ver's
+constexpr uint32_t kRank = 0x0C38330Cu;
+constexpr uint32_t kRankPart1 = 0x0C38444Cu, kRankPart2 = 0x0C384450u, kRankFrames = 0x0C383404u, kRankBase = 0x0C383408u;
+// The record the routine reads (0x0C3833D8): 1 at +4 while a game is played (0 in the attract show's demonstration: a
+// dump of it held 0), the mode at +16 (0 Original, 1 Maniac, 2 the third) and the stage played at +20 (from 0: a game
+// begun at stage 3 held 2)
+constexpr uint32_t kGameOn = 0x0C3833DCu, kMode = 0x0C3833E8u, kStage = 0x0C3833ECu;
+constexpr int kRankMost[] = {255, 232, 248};
+constexpr int kUltra = 2, kUltraLateStage = 3, kUltraLateMost = 255;
+// Player 1's score (ten bytes, a digit each, the lowest first, as Black Label Another Ver's; read against the picture at
+// one frame)
+constexpr uint32_t kScore = 0x0C383A3Cu;
+constexpr bool kScoreDigits = true;
+
 } // namespace spelunk::futariblj

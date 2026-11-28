@@ -71,4 +71,26 @@ constexpr int kShotsPassKinds[] = {1, 21};
 // (the ship's box is the same out of harm: nothing put in its place)
 constexpr uint32_t kSafeReach = 0, kShipSizes = 0, kShipType = 0, kSizesAt = 0, kSizesMode = 0, kSizesModeAt = 0;
 
+// --- What the gadgets read (port/gadgets.h; found 2026-11-28 by RAM logs and dumps of headless play and the code that
+// writes each, SPELUNK_WATCH on the interpreter) ---
+// The game's rank (32 bits): made again each frame by 0x0C06C2C0 as the larger of the two players' parts (32 bits each,
+// made by 0x0C06C380: 4 x the bombs held plus 2 x the record's byte after them: 12 with three bombs, 8, 4, 0 as they
+// were used), plus the
+// frames the game has been played over 512 (the 32 bits at kRankFrames, one more each frame), plus the mode's base
+// (kRankBase: 12 in Original); in Original 16 more when 0x0C068E70 says so; then cut to the mode's most (208 in
+// Original, 232 in Maniac, 248 in Ultra, 255 there from the 4th stage on). Found: it went up one about every 525
+// frames in a log of a game, and down 4 as each bomb was used
+constexpr uint32_t kRank = 0x0C38A4ACu;
+constexpr uint32_t kRankPart1 = 0x0C38B390u, kRankPart2 = 0x0C38B394u, kRankFrames = 0x0C38A59Cu, kRankBase = 0x0C38A5A0u;
+// The record the routine reads (0x0C38A570): 1 at +4 while a game is played (from the choosing of the ship to the title
+// after its end, its continue offered too; 0 through the attract show and its demonstration: found by RAM logs of
+// both), the mode at +16 (0 Original, 1 Maniac, 2 Ultra: the most the rank goes to in each) and the stage played at
+// +20 (from 0: the routine that begins a stage, kBeginStage, writes it, 0x0C0686AE; a game begun at stage 3 held 2)
+constexpr uint32_t kGameOn = 0x0C38A574u, kMode = 0x0C38A580u, kStage = 0x0C38A584u;
+constexpr int kRankMost[] = {208, 232, 248};
+constexpr int kUltra = 2, kUltraLateStage = 3, kUltraLateMost = 255;
+// Player 1's score (32 bits: 134,037 in a dump and 493,748 in another, as the picture showed them)
+constexpr uint32_t kScore = 0x0C38AAD0u;
+constexpr bool kScoreDigits = false;
+
 } // namespace spelunk::futari15
