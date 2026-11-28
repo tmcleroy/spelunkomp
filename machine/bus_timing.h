@@ -805,6 +805,12 @@ struct Sh3Paths {
     std::vector<uint32_t> written = std::vector<uint32_t>(kRamBytes >> kBlockShift); // (each block's last write)
     uint32_t clock = 1;
     uint32_t generation = 1; // (the kept paths': a memo of another is not kept)
+    // (each place's successor: the place of the path found or kept after it, last time. The next event's path is
+    // most often the one that followed last time (a loop's), so its place is tried first and its line fetched ahead,
+    // while the CPU runs the code between: a guess only, checked as the table is, so it changes no path found)
+    static constexpr uint32_t kNoPlace = 0xFFFFFFFFu;
+    std::vector<uint16_t> next = std::vector<uint16_t>(size_t{1} << bits);
+    uint32_t last = kNoPlace;
 
     Sh3Paths() {
         for (Memo &m : memos) {
@@ -857,23 +863,38 @@ struct Sh3Paths {
         return m.generation == generation && m.from == from && m.to == to && m.info.lastLoad == lastLoad;
     }
     const Memo *Find(uint32_t from, uint32_t to, int8_t lastLoad) { // (from's bit 0: jumped to; to's: a branch)
-        const uint32_t set = Set(from, to, lastLoad);
-        Memo *const pair = &memos[2 * set];
-        uint32_t way = 0;
-        if (!Holds(pair[0], from, to, lastLoad)) {
-            if (!Holds(pair[1], from, to, lastLoad)) {
-                return nullptr;
+        // (a path is kept only in its own set, and in one place of it: where it is held, the guess and the set agree)
+        uint32_t at = last != kNoPlace ? next[last] : 0;
+        if (last == kNoPlace || !Holds(memos[at], from, to, lastLoad)) {
+            at = 2 * Set(from, to, lastLoad);
+            if (!Holds(memos[at], from, to, lastLoad)) {
+                if (!Holds(memos[at + 1], from, to, lastLoad)) {
+                    last = kNoPlace;
+                    return nullptr;
+                }
+                at++;
             }
-            way = 1;
         }
-        pair[0].recent = static_cast<uint8_t>(way);
-        const Memo *m = &pair[way];
+        Memo &first = memos[at & ~1u];
+        if (first.recent != (at & 1)) {
+            first.recent = static_cast<uint8_t>(at & 1);
+        }
+        const Memo *m = &memos[at];
         for (uint32_t i = 0; i < m->blocks; i++) {
             if (written[m->block[i]] > m->stamp) {
+                last = kNoPlace;
                 return nullptr;
             }
         }
+        Follow(at);
         return m;
+    }
+    void Follow(uint32_t at) {
+        if (last != kNoPlace) {
+            next[last] = static_cast<uint16_t>(at);
+        }
+        last = at;
+        __builtin_prefetch(&memos[next[at]]);
     }
     // (a found memo's plan)
     const uint32_t *Fetches(const Memo *m) const {
@@ -884,6 +905,7 @@ struct Sh3Paths {
     }
     void Keep(uint32_t from, uint32_t to, const Sh3Timing::PathInfo &info, const Sh3Timing::Plan &plan, const Watching &watching) {
         if (info.count > kMemoSteps || watching.tooMany || plan.tail > 0xFFFF || plan.span > 0xFFFF) {
+            last = kNoPlace;
             return;
         }
         const uint32_t set = Set(from, to, info.lastLoad);
@@ -892,6 +914,7 @@ struct Sh3Paths {
                              : Holds(pair[1], from, to, info.lastLoad) ? 1
                                                                        : 1u - pair[0].recent;
         pair[0].recent = static_cast<uint8_t>(way);
+        Follow(2 * set + way);
         Memo &m = pair[way];
         // (its cold plan, if it had one, kept for a long plan or given up: a memo's fields stay as they were until
         // Keep writes them, a Forget only changing the table's generation)
